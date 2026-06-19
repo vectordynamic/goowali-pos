@@ -69,7 +69,7 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
     branches.find((b) => b._id === id)?.name ?? id?.slice(-6) ?? '—'
 
   const totalDue = customers.reduce((s, c) => s + c.khata.currentDue, 0)
-  const showBranchFilter = role !== 'MANAGER' && !forceBranchId
+  const showBranchFilter = role === 'SUPER_ADMIN' && !forceBranchId
 
   return (
     <div>

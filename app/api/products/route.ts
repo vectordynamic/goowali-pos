@@ -24,6 +24,21 @@ export async function GET(req: NextRequest) {
   // Admin global view
   if (all && role !== 'MANAGER') {
     const products = await Product.find({}).lean()
+
+    // BRANCH_ADMIN gets all products but only their branch's stock/pricing
+    if (role === 'BRANCH_ADMIN') {
+      const filtered = products.map((p: any) => ({
+        ...p,
+        variants: p.variants.map((v: any) => ({
+          ...v,
+          branchDetails: v.branchDetails.filter((bd: any) =>
+            assignedBranches.includes(bd.branchId.toString())
+          )
+        }))
+      }))
+      return NextResponse.json(filtered)
+    }
+
     return NextResponse.json(products)
   }
 
