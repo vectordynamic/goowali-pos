@@ -7,6 +7,7 @@ export interface CustomerDocument extends Document {
   location?: string
   customerType: CustomerType
   registeredBranch?: Types.ObjectId
+  createdBy?: Types.ObjectId
   paikariConfig: {
     deliveryMethod: 'Pickup' | 'Send'
     dailyRequirementLiters: number
@@ -47,6 +48,7 @@ const CustomerSchema = new Schema<CustomerDocument>(
       required: true
     },
     registeredBranch: { type: Schema.Types.ObjectId, ref: 'Branch', index: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     paikariConfig: {
       deliveryMethod: { type: String, enum: ['Pickup', 'Send'], default: 'Pickup' },
       dailyRequirementLiters: { type: Number, default: 0 },

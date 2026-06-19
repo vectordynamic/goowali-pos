@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
   const { role, assignedBranches } = session.user as { role: Role; assignedBranches: string[] }
   const branchId = req.nextUrl.searchParams.get('branchId')
   const all = req.nextUrl.searchParams.get('all') === '1'
+  // stock context: manager is adding stock and needs to see/update buying price
+  const stockContext = req.nextUrl.searchParams.get('context') === 'stock'
 
   await dbConnect()
 
@@ -45,7 +47,8 @@ export async function GET(req: NextRequest) {
     }))
   }))
 
-  const sanitized = stripSensitiveProductData(filtered, role)
+  // In stock management context, manager needs to see buying price to update it
+  const sanitized = stockContext ? filtered : stripSensitiveProductData(filtered, role)
   return NextResponse.json(sanitized)
 }
 

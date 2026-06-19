@@ -9,7 +9,7 @@ import { assertBranchAccess, branchDenied, today } from '@/lib/utils'
 import { validate, DailyClosingSubmitSchema } from '@/lib/validators'
 import type { Role } from '@/types'
 
-async function computeSystemTotals(branchId: string, date: string) {
+async function computeSystemTotals(branchId: string, date: string, openingCash = 0) {
   const start = new Date(date)
   const end = new Date(date)
   end.setDate(end.getDate() + 1)
@@ -55,7 +55,6 @@ async function computeSystemTotals(branchId: string, date: string) {
   const cashSales = result?.cashSales ?? 0
   const dueCollections = result?.dueCollections ?? 0
   const expensesLogged = result?.expensesLogged ?? 0
-  const openingCash = 0
   const expectedDrawerCash = openingCash + cashSales + dueCollections - expensesLogged
 
   return { openingCash, cashSales, dueCollections, expensesLogged, expectedDrawerCash }
@@ -75,8 +74,9 @@ export async function GET(req: NextRequest) {
 
   await dbConnect()
 
-  const systemTotals = await computeSystemTotals(branchId, date)
   let closing = await DailyClosing.findOne({ branchId, date })
+  const storedOpeningCash = closing?.mathematicalSystemTotals?.openingCash ?? 0
+  const systemTotals = await computeSystemTotals(branchId, date, storedOpeningCash)
 
   if (!closing) {
     closing = await DailyClosing.create({
@@ -91,6 +91,33 @@ export async function GET(req: NextRequest) {
     closing.mathematicalSystemTotals = systemTotals as any
     await closing.save()
   }
+
+  return NextResponse.json(closing)
+}
+
+// PATCH /api/daily-closing — Set opening cash for the day
+export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { role, assignedBranches } = session.user as { role: Role; assignedBranches: string[] }
+  const { branchId, date, openingCash } = await req.json()
+
+  if (!branchId || openingCash === undefined) {
+    return NextResponse.json({ error: 'branchId and openingCash are required' }, { status: 400 })
+  }
+  if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
+
+  await dbConnect()
+
+  const targetDate = date ?? today()
+  const systemTotals = await computeSystemTotals(branchId, targetDate, Number(openingCash))
+
+  const closing = await DailyClosing.findOneAndUpdate(
+    { branchId, date: targetDate },
+    { $set: { mathematicalSystemTotals: systemTotals } },
+    { new: true, upsert: true }
+  )
 
   return NextResponse.json(closing)
 }

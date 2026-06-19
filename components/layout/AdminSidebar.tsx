@@ -13,7 +13,8 @@ import {
   UserRound,
   Truck,
   ClipboardList,
-  Wallet
+  Wallet,
+  History
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -33,8 +34,9 @@ const adminNavItems = [
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/products', label: 'Products', icon: Package, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/customers', label: 'Customers', icon: UserRound, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
-  { href: '/wholesale-orders', label: 'Wholesale Orders', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
+  { href: '/regular-orders', label: 'Regular Orders', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/due', label: 'Due Collection', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
+  { href: '/stock-log', label: 'Stock Log', icon: History, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/users', label: 'Users', icon: Users, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/branches', label: 'Branches', icon: GitBranch, roles: ['SUPER_ADMIN'] }
 ]

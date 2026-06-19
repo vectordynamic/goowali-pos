@@ -1,9 +1,9 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import WholesaleOrderManager from '@/components/admin/WholesaleOrderManager'
+import RegularOrderManager from '@/components/admin/RegularOrderManager'
 
-export default async function WholesaleOrdersPage() {
+export default async function RegularOrdersPage() {
   const session = await getServerSession(authOptions)
   if (!session) redirect('/login')
 
@@ -14,12 +14,12 @@ export default async function WholesaleOrdersPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-slate-100">Wholesale Orders</h1>
+        <h1 className="text-xl font-bold text-slate-100">Regular Orders</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Configure daily orders for Paikari customers — product, quantity, and locked price
+          Configure standing daily orders for customers — product, quantity, and locked price
         </p>
       </div>
-      <WholesaleOrderManager role={role} assignedBranches={assignedBranches} />
+      <RegularOrderManager role={role} assignedBranches={assignedBranches} />
     </div>
   )
 }

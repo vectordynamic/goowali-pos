@@ -59,7 +59,24 @@ export const CustomerCreateSchema = z.object({
   }).default(() => ({ deliveryMethod: 'Pickup' as const, dailyRequirementLiters: 0, fixedProductRates: [] }))
 })
 
-export const CustomerUpdateSchema = CustomerCreateSchema.partial()
+export const CustomerUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  phone: bdPhone.optional(),
+  location: z.string().trim().max(200).optional(),
+  customerType: z.enum(['Retail', 'Paikari']).optional(),
+  registeredBranch: objectId.optional(),
+  isActive: z.boolean().optional(),
+  paikariConfig: z.object({
+    deliveryMethod: z.enum(['Pickup', 'Send']).default('Pickup'),
+    dailyRequirementLiters: z.number().min(0).default(0),
+    fixedProductRates: z.array(z.object({
+      productId: objectId,
+      variantId: z.string().min(1),
+      lockedRate: z.number().min(0),
+      dailyQty: z.number().min(0).default(1)
+    })).default([])
+  }).optional()
+})
 
 // ─── Product ──────────────────────────────────────────────────────────────────
 export const BranchDetailSchema = z.object({

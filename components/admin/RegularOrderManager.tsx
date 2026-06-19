@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import {
-  Plus, X, Pencil, Truck, RefreshCw, Trash2
+  Plus, X, Pencil, ClipboardList, RefreshCw, Trash2
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -28,14 +28,14 @@ interface FixedRate {
   variantId: string
   lockedRate: number
   dailyQty: number
-  productName?: string
 }
 
-interface PaikariCustomer {
+interface Customer {
   _id: string
   name: string
   phone: string
   location?: string
+  customerType: 'Retail' | 'Paikari'
   registeredBranch?: string
   paikariConfig: {
     deliveryMethod: 'Pickup' | 'Send'
@@ -49,19 +49,20 @@ interface Props {
   assignedBranches: string[]
 }
 
-export default function WholesaleOrderManager({ role, assignedBranches }: Props) {
-  const [customers, setCustomers] = useState<PaikariCustomer[]>([])
+export default function RegularOrderManager({ role, assignedBranches }: Props) {
+  const [customers, setCustomers] = useState<Customer[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [branchFilter, setBranchFilter] = useState(
     role !== 'SUPER_ADMIN' && assignedBranches.length === 1 ? assignedBranches[0] : ''
   )
   const [loading, setLoading] = useState(true)
-  const [editTarget, setEditTarget] = useState<PaikariCustomer | null>(null)
+  const [editTarget, setEditTarget] = useState<Customer | null>(null)
 
   function load() {
     setLoading(true)
-    const params = new URLSearchParams({ type: 'Paikari' })
+    // Fetch ALL customer types — both Retail and Paikari can have regular orders
+    const params = new URLSearchParams()
     if (branchFilter) params.set('branchId', branchFilter)
 
     Promise.all([
@@ -89,6 +90,11 @@ export default function WholesaleOrderManager({ role, assignedBranches }: Props)
 
   const showBranchFilter = role === 'SUPER_ADMIN'
 
+  // Show all customers; those with orders appear at top
+  const withOrders = customers.filter((c) => c.paikariConfig?.fixedProductRates?.length > 0)
+  const withoutOrders = customers.filter((c) => !c.paikariConfig?.fixedProductRates?.length)
+  const sorted = [...withOrders, ...withoutOrders]
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -113,29 +119,38 @@ export default function WholesaleOrderManager({ role, assignedBranches }: Props)
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
 
-        <span className="text-sm text-slate-500 ml-1">{customers.length} wholesale customers</span>
+        <span className="text-sm text-slate-500 ml-1">
+          {withOrders.length} with orders · {withoutOrders.length} without
+        </span>
       </div>
 
       {loading ? (
-        <div className="text-center text-slate-500 py-12 text-sm">Loading wholesale orders…</div>
-      ) : customers.length === 0 ? (
+        <div className="text-center text-slate-500 py-12 text-sm">Loading customers…</div>
+      ) : sorted.length === 0 ? (
         <div className="text-center py-16">
-          <Truck className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-          <p className="text-slate-400 font-medium">No Paikari customers</p>
+          <ClipboardList className="w-10 h-10 text-slate-700 mx-auto mb-3" />
+          <p className="text-slate-400 font-medium">No customers</p>
           <p className="text-slate-600 text-sm mt-1">
-            Add Paikari customers from the Customers page first
+            Add customers from the Customers page first
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {customers.map((c) => {
-            const hasOrder = c.paikariConfig.fixedProductRates.length > 0
+          {sorted.map((c) => {
+            const hasOrder = c.paikariConfig?.fixedProductRates?.length > 0
             return (
               <div key={c._id} className="card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-semibold text-slate-100">{c.name}</p>
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                        c.customerType === 'Paikari'
+                          ? 'bg-amber-900/30 text-amber-400'
+                          : 'bg-blue-900/30 text-blue-400'
+                      }`}>
+                        {c.customerType}
+                      </span>
                       {role === 'SUPER_ADMIN' && (
                         <span className="text-xs text-slate-600 bg-slate-800 px-1.5 py-0.5 rounded">
                           {branchName(c.registeredBranch)}
@@ -187,7 +202,7 @@ export default function WholesaleOrderManager({ role, assignedBranches }: Props)
                     </p>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-600 mt-2 italic">No daily order configured</p>
+                  <p className="text-xs text-slate-600 mt-2 italic">No regular order configured</p>
                 )}
               </div>
             )
@@ -196,7 +211,7 @@ export default function WholesaleOrderManager({ role, assignedBranches }: Props)
       )}
 
       {editTarget && (
-        <WholesaleOrderModal
+        <RegularOrderModal
           customer={editTarget}
           products={products}
           branches={branches}
@@ -210,7 +225,7 @@ export default function WholesaleOrderManager({ role, assignedBranches }: Props)
   )
 }
 
-function WholesaleOrderModal({
+function RegularOrderModal({
   customer,
   products,
   branches,
@@ -219,7 +234,7 @@ function WholesaleOrderModal({
   onClose,
   onSave
 }: {
-  customer: PaikariCustomer
+  customer: Customer
   products: Product[]
   branches: Branch[]
   role: Role
@@ -227,7 +242,6 @@ function WholesaleOrderModal({
   onClose: () => void
   onSave: () => void
 }) {
-  // Normalize existing rates: fill missing variantId and dailyQty (added in later schema version)
   function normalizeRates(raw: FixedRate[]): FixedRate[] {
     return raw.map((r) => ({
       ...r,
@@ -240,7 +254,7 @@ function WholesaleOrderModal({
     products.find((p) => p.name.toLowerCase().includes('milk')) ?? products[0]
 
   const [rates, setRates] = useState<FixedRate[]>(
-    customer.paikariConfig.fixedProductRates.length > 0
+    customer.paikariConfig?.fixedProductRates?.length > 0
       ? normalizeRates(customer.paikariConfig.fixedProductRates)
       : [{
           productId: defaultProduct?._id ?? '',
@@ -250,7 +264,7 @@ function WholesaleOrderModal({
         }]
   )
   const [deliveryMethod, setDeliveryMethod] = useState<'Pickup' | 'Send'>(
-    customer.paikariConfig.deliveryMethod
+    customer.paikariConfig?.deliveryMethod ?? 'Pickup'
   )
   const [submitting, setSubmitting] = useState(false)
 
@@ -279,9 +293,22 @@ function WholesaleOrderModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    const validRates = rates.filter((r) => r.productId && r.lockedRate > 0 && r.dailyQty > 0)
+    // Resolve variantId early — fallback to first variant of the product
+    const resolved = rates.map((r) => ({
+      ...r,
+      variantId: r.variantId || (getVariants(r.productId)[0]?.variantId ?? '')
+    }))
+
+    const validRates = resolved.filter((r) => r.productId && r.lockedRate > 0 && r.dailyQty > 0)
     if (validRates.length === 0) {
       toast.error('Add at least one product with qty and price')
+      return
+    }
+
+    const missingVariant = validRates.find((r) => !r.variantId)
+    if (missingVariant) {
+      const name = products.find((p) => p._id === missingVariant.productId)?.name ?? 'a product'
+      toast.error(`"${name}" has no variant set up — edit the product first and add a variant`)
       return
     }
 
@@ -295,7 +322,7 @@ function WholesaleOrderModal({
           dailyRequirementLiters: validRates.reduce((s, r) => s + r.dailyQty, 0),
           fixedProductRates: validRates.map((r) => ({
             productId: r.productId,
-            variantId: r.variantId || (getVariants(r.productId)[0]?.variantId ?? ''),
+            variantId: r.variantId,
             lockedRate: r.lockedRate,
             dailyQty: r.dailyQty
           }))
@@ -306,10 +333,12 @@ function WholesaleOrderModal({
     setSubmitting(false)
     if (!res.ok) {
       const err = await res.json()
-      toast.error(err.error ?? 'Failed to save order')
+      console.error('[RegularOrder] save failed:', err)
+      const detail = err.errors?.[0] ? `${err.errors[0].field}: ${err.errors[0].message}` : (err.error ?? 'Failed to save order')
+      toast.error(detail)
       return
     }
-    toast.success(`Order updated for ${customer.name}`)
+    toast.success(`Regular order updated for ${customer.name}`)
     onSave()
   }
 
@@ -318,15 +347,24 @@ function WholesaleOrderModal({
       <div className="card w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div>
-            <h2 className="text-base font-semibold text-slate-100">Wholesale Order</h2>
-            <p className="text-xs text-slate-500 mt-0.5">{customer.name}</p>
+            <h2 className="text-base font-semibold text-slate-100">Regular Order</h2>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-500">{customer.name}</p>
+              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                customer.customerType === 'Paikari'
+                  ? 'bg-amber-900/30 text-amber-400'
+                  : 'bg-blue-900/30 text-blue-400'
+              }`}>
+                {customer.customerType}
+              </span>
+            </div>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form id="wholesale-order-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <form id="regular-order-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Delivery method */}
           <div>
             <label className="text-xs text-slate-400 block mb-1.5">Delivery Method</label>
@@ -454,7 +492,7 @@ function WholesaleOrderModal({
           <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
           <button
             type="submit"
-            form="wholesale-order-form"
+            form="regular-order-form"
             disabled={submitting}
             className="btn-primary flex-1"
           >

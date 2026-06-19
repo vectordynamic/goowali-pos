@@ -21,7 +21,7 @@ export default withAuth(
     }
 
     // Admin-only pages: MANAGERs get silently sent to their POS
-    const adminOnlyPaths = ['/analytics', '/users', '/products', '/customers']
+    const adminOnlyPaths = ['/analytics', '/users', '/products', '/customers', '/regular-orders', '/wholesale-orders', '/due', '/branches']
     if (adminOnlyPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
       if (role === 'MANAGER') {
         const branchId = assignedBranches[0]

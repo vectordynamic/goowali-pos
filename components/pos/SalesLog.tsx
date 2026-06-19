@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { RefreshCw, Search, Receipt, User, ChevronDown } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
+import DailyOrders from './DailyOrders'
 
 interface TransactionItem {
   productId: string
@@ -35,6 +36,10 @@ interface Props {
   role: Role
 }
 
+function todayDate() {
+  return new Date().toISOString().split('T')[0]
+}
+
 const TYPE_COLORS: Record<string, string> = {
   'Cash Sale': 'bg-emerald-900/30 text-emerald-400',
   'Credit Sale': 'bg-amber-900/30 text-amber-400',
@@ -44,14 +49,10 @@ const TYPE_COLORS: Record<string, string> = {
   'Procurement': 'bg-slate-700 text-slate-400'
 }
 
-function today() {
-  return new Date().toISOString().split('T')[0]
-}
-
 export default function SalesLog({ branchId, role }: Props) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
-  const [date, setDate] = useState(today)
+  const [date, setDate] = useState(todayDate)
   const [typeFilter, setTypeFilter] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
@@ -69,12 +70,26 @@ export default function SalesLog({ branchId, role }: Props) {
 
   useEffect(() => { load() }, [load])
 
+  const SALE_TYPES = ['Cash Sale', 'Credit Sale', 'Partial Payment']
+  const saleCount = transactions.filter((t) => SALE_TYPES.includes(t.transactionType)).length
+
   const total = transactions.reduce((s, t) => s + t.financials.totalBill, 0)
   const cashTotal = transactions.reduce((s, t) => s + t.financials.cashPaid, 0)
   const khataTotal = transactions.reduce((s, t) => s + t.financials.amountAddedToKhata, 0)
 
+  const isToday = date === todayDate()
+
   return (
     <div className="space-y-4">
+      {/* Regular orders checklist — only shown for today */}
+      {isToday && (
+        <DailyOrders
+          branchId={branchId}
+          date={date}
+          onTaken={load}
+        />
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
@@ -108,7 +123,7 @@ export default function SalesLog({ branchId, role }: Props) {
         </button>
 
         <button
-          onClick={() => setDate(today())}
+          onClick={() => setDate(todayDate())}
           className="btn-secondary text-xs"
         >
           Today
@@ -117,22 +132,24 @@ export default function SalesLog({ branchId, role }: Props) {
 
       {/* Summary strip */}
       {!loading && transactions.length > 0 && (
-        <div className="flex gap-4 flex-wrap">
+        <div className="flex gap-3 flex-wrap">
           <div className="card px-4 py-2 flex items-center gap-2">
-            <span className="text-xs text-slate-500">Transactions</span>
-            <span className="text-sm font-bold text-slate-100">{transactions.length}</span>
+            <span className="text-xs text-slate-500">Total Sales</span>
+            <span className="text-sm font-bold text-slate-100">{saleCount}</span>
           </div>
+          {role !== 'MANAGER' && (
+            <div className="card px-4 py-2 flex items-center gap-2">
+              <span className="text-xs text-slate-500">Revenue</span>
+              <span className="text-sm font-bold text-emerald-400">{formatCurrency(total)}</span>
+            </div>
+          )}
           <div className="card px-4 py-2 flex items-center gap-2">
-            <span className="text-xs text-slate-500">Total Billed</span>
-            <span className="text-sm font-bold text-emerald-400">{formatCurrency(total)}</span>
-          </div>
-          <div className="card px-4 py-2 flex items-center gap-2">
-            <span className="text-xs text-slate-500">Cash Collected</span>
+            <span className="text-xs text-slate-500">Cash In</span>
             <span className="text-sm font-bold text-blue-400">{formatCurrency(cashTotal)}</span>
           </div>
           {khataTotal > 0 && (
             <div className="card px-4 py-2 flex items-center gap-2">
-              <span className="text-xs text-slate-500">Added to Due</span>
+              <span className="text-xs text-slate-500">Credit Given</span>
               <span className="text-sm font-bold text-amber-400">{formatCurrency(khataTotal)}</span>
             </div>
           )}
@@ -178,7 +195,11 @@ export default function SalesLog({ branchId, role }: Props) {
                   <span className="flex items-center gap-1 text-sm text-slate-400 flex-1 min-w-0">
                     <User className="w-3 h-3 shrink-0 text-slate-600" />
                     <span className="truncate">
-                      {tx.customerId?.name ?? 'Walk-in'}
+                      {tx.customerId?.name ?? (
+                        tx.transactionType === 'Procurement' ? 'Stock Purchase' :
+                        tx.transactionType === 'Expense' ? 'Store Expense' :
+                        'Walk-in'
+                      )}
                     </span>
                   </span>
 
@@ -237,21 +258,24 @@ export default function SalesLog({ branchId, role }: Props) {
 
                     {/* Payment breakdown */}
                     <div className="flex flex-wrap gap-4 text-xs pt-1">
-                      <div>
-                        <span className="text-slate-500">Total Bill: </span>
-                        <span className="text-emerald-400 font-medium">{formatCurrency(tx.financials.totalBill)}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Cash Paid: </span>
-                        <span className="text-blue-400 font-medium">{formatCurrency(tx.financials.cashPaid)}</span>
-                      </div>
+                      {role !== 'MANAGER' && (
+                        <div>
+                          <span className="text-slate-500">Total: </span>
+                          <span className="text-emerald-400 font-medium">{formatCurrency(tx.financials.totalBill)}</span>
+                        </div>
+                      )}
+                      {tx.financials.cashPaid > 0 && (
+                        <div>
+                          <span className="text-slate-500">Cash received: </span>
+                          <span className="text-blue-400 font-medium">{formatCurrency(tx.financials.cashPaid)}</span>
+                        </div>
+                      )}
                       {tx.financials.amountAddedToKhata > 0 && (
                         <div>
-                          <span className="text-slate-500">Added to Due: </span>
+                          <span className="text-slate-500">On credit: </span>
                           <span className="text-amber-400 font-medium">{formatCurrency(tx.financials.amountAddedToKhata)}</span>
                         </div>
                       )}
-                      {/* Profit only visible for non-MANAGER */}
                       {role !== 'MANAGER' && tx.financials.netProfitAmount !== undefined && (
                         <div>
                           <span className="text-slate-500">Profit: </span>

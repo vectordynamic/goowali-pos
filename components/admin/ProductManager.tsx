@@ -374,7 +374,7 @@ function VariantModal({ productId, onClose, onSave }: {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        $push: { variants: { variantId, sizeLabel, branchDetails: [] } }
+        pushVariant: { variantId, sizeLabel, branchDetails: [] }
       })
     })
 

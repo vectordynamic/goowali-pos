@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { Lock, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Wallet, TrendingUp, TrendingDown, Check, Pencil } from 'lucide-react'
 import { formatCurrency, today } from '@/lib/utils'
+import StockManager from './StockManager'
 
 interface SystemTotals {
   openingCash: number
@@ -13,191 +14,218 @@ interface SystemTotals {
   expectedDrawerCash: number
 }
 
-interface Closing {
-  _id: string
-  date: string
-  status: 'Open' | 'Locked'
-  mathematicalSystemTotals: SystemTotals
-  managerSubmittedTotals: { physicalCashCounted: number; remainingMilkStock: number }
-  discrepancies: { cashShortage: number; stockMismatch: number }
-}
-
 export default function ZReport({ branchId }: { branchId: string }) {
-  const [closing, setClosing] = useState<Closing | null>(null)
-  const [physicalCash, setPhysicalCash] = useState('')
-  const [milkStock, setMilkStock] = useState('')
+  const [totals, setTotals] = useState<SystemTotals | null>(null)
   const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
+  const [drawerCash, setDrawerCash] = useState('')
+
+  // Opening cash state
+  const [openingCash, setOpeningCash] = useState('')
+  const [openingSet, setOpeningSet] = useState(false)
+  const [savingOpening, setSavingOpening] = useState(false)
 
   useEffect(() => {
     fetch(`/api/daily-closing?branchId=${branchId}&date=${today()}`)
       .then((r) => r.json())
       .then((data) => {
-        setClosing(data)
-        if (data.status === 'Locked') {
-          setPhysicalCash(String(data.managerSubmittedTotals.physicalCashCounted))
-          setMilkStock(String(data.managerSubmittedTotals.remainingMilkStock))
+        const t = data?.mathematicalSystemTotals ?? null
+        setTotals(t)
+        if (t?.openingCash > 0) {
+          setOpeningCash(String(t.openingCash))
+          setOpeningSet(true)
         }
       })
-      .catch(() => toast.error('Failed to load closing data'))
+      .catch(() => toast.error('Failed to load totals'))
       .finally(() => setLoading(false))
   }, [branchId])
 
-  async function handleSubmit() {
-    if (!physicalCash) {
-      toast.error('Enter physical cash count')
+  async function saveOpeningCash() {
+    const amount = Number(openingCash)
+    if (isNaN(amount) || amount < 0) {
+      toast.error('Enter a valid amount')
       return
     }
-
-    setSubmitting(true)
+    setSavingOpening(true)
     const res = await fetch('/api/daily-closing', {
-      method: 'POST',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        branchId,
-        date: today(),
-        physicalCashCounted: Number(physicalCash),
-        remainingMilkStock: Number(milkStock)
-      })
+      body: JSON.stringify({ branchId, date: today(), openingCash: amount })
     })
-    setSubmitting(false)
-
+    setSavingOpening(false)
     if (!res.ok) {
-      const err = await res.json()
-      toast.error(err.error ?? 'Failed to submit')
+      toast.error('Failed to save opening cash')
       return
     }
-
     const data = await res.json()
-    setClosing(data)
-    toast.success('Z-Report submitted and day locked')
+    setTotals(data.mathematicalSystemTotals)
+    setOpeningSet(true)
+    toast.success('Opening cash saved')
   }
 
-  if (loading) {
-    return <div className="text-slate-500 text-sm">Loading…</div>
-  }
-
-  const s = closing?.mathematicalSystemTotals
-  const isLocked = closing?.status === 'Locked'
+  const expected = totals?.expectedDrawerCash ?? 0
+  const actual = drawerCash !== '' ? Number(drawerCash) : null
+  const diff = actual !== null ? actual - expected : null
+  const isShort = diff !== null && diff < 0
+  const isBalanced = diff !== null && diff === 0
 
   return (
-    <div className="max-w-2xl space-y-4">
-      {/* Status */}
-      <div className={`card p-4 flex items-center gap-3 ${isLocked ? 'border-emerald-800/50' : 'border-amber-800/50'}`}>
-        {isLocked ? (
-          <Lock className="w-5 h-5 text-emerald-400" />
-        ) : (
-          <AlertTriangle className="w-5 h-5 text-amber-400" />
-        )}
-        <div>
-          <p className={`text-sm font-medium ${isLocked ? 'text-emerald-400' : 'text-amber-400'}`}>
-            {isLocked ? 'Day Locked' : 'Day Open'}
-          </p>
-          <p className="text-xs text-slate-500">{closing?.date}</p>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <StockManager branchId={branchId} />
 
-      {/* System totals */}
-      <div className="card">
-        <div className="px-4 py-3 border-b border-slate-800">
-          <p className="text-sm font-medium text-slate-100">System Totals</p>
-          <p className="text-xs text-slate-500">Auto-calculated from transactions</p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Today's Summary */}
+        <div className="card">
+          <div className="px-4 py-3 border-b border-slate-800">
+            <p className="text-sm font-medium text-slate-100">Today's Summary</p>
+            <p className="text-xs text-slate-500">Auto-calculated from transactions</p>
+          </div>
+
+          {loading ? (
+            <div className="p-4 text-sm text-slate-500">Loading…</div>
+          ) : (
+            <>
+              <div className="p-4 grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Opening Cash', value: totals?.openingCash ?? 0 },
+                  { label: 'Cash Sales', value: totals?.cashSales ?? 0 },
+                  { label: 'Due Collections', value: totals?.dueCollections ?? 0 },
+                  { label: 'Expenses', value: totals?.expensesLogged ?? 0 },
+                ].map((row) => (
+                  <div key={row.label} className="bg-slate-800/50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500 mb-0.5">{row.label}</p>
+                    <p className="text-sm font-bold text-slate-100">{formatCurrency(row.value)}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 pb-4">
+                <div className="bg-blue-900/20 border border-blue-800/30 rounded-lg p-3 flex justify-between items-center">
+                  <span className="text-sm text-blue-300">Expected in Drawer</span>
+                  <span className="text-base font-bold text-blue-400">
+                    {formatCurrency(expected)}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-        <div className="p-4 grid grid-cols-2 gap-3">
-          {[
-            { label: 'Opening Cash', value: s?.openingCash ?? 0 },
-            { label: 'Cash Sales', value: s?.cashSales ?? 0 },
-            { label: 'Due Collections', value: s?.dueCollections ?? 0 },
-            { label: 'Expenses', value: s?.expensesLogged ?? 0 },
-          ].map((row) => (
-            <div key={row.label} className="bg-slate-800/50 rounded-lg p-3">
-              <p className="text-xs text-slate-500 mb-0.5">{row.label}</p>
-              <p className="text-sm font-bold text-slate-100">{formatCurrency(row.value)}</p>
+
+        {/* Cash Drawer */}
+        <div className="card flex flex-col">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-slate-400" />
+            <div>
+              <p className="text-sm font-medium text-slate-100">Cash Drawer</p>
+              <p className="text-xs text-slate-500">Set opening balance, then count end-of-day cash</p>
             </div>
-          ))}
-        </div>
-        <div className="px-4 pb-4">
-          <div className="bg-blue-900/20 border border-blue-800/30 rounded-lg p-3 flex justify-between items-center">
-            <span className="text-sm text-blue-300">Expected Drawer Cash</span>
-            <span className="text-base font-bold text-blue-400">
-              {formatCurrency(s?.expectedDrawerCash ?? 0)}
-            </span>
           </div>
-        </div>
-      </div>
 
-      {/* Manager inputs */}
-      <div className="card p-4 space-y-4">
-        <p className="text-sm font-medium text-slate-100">Manager Submission</p>
+          <div className="p-4 flex flex-col gap-4 flex-1">
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Physical Cash Counted (৳)</label>
-            <input
-              type="number"
-              className="input-base"
-              placeholder="0"
-              value={physicalCash}
-              onChange={(e) => setPhysicalCash(e.target.value)}
-              disabled={isLocked}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Remaining Milk Stock (L)</label>
-            <input
-              type="number"
-              className="input-base"
-              placeholder="0"
-              value={milkStock}
-              onChange={(e) => setMilkStock(e.target.value)}
-              disabled={isLocked}
-            />
-          </div>
-        </div>
+            {/* Opening cash */}
+            <div className="bg-slate-800/40 rounded-lg p-3 space-y-2">
+              <p className="text-xs text-slate-400 font-medium">Opening Cash (start of day)</p>
+              {openingSet ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-base font-bold text-slate-100">
+                    {formatCurrency(Number(openingCash))}
+                  </span>
+                  <button
+                    onClick={() => setOpeningSet(false)}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    Edit
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    className="input-base flex-1"
+                    placeholder="0"
+                    value={openingCash}
+                    onChange={(e) => setOpeningCash(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveOpeningCash()}
+                    autoFocus
+                  />
+                  <button
+                    onClick={saveOpeningCash}
+                    disabled={savingOpening}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-500 rounded-md hover:bg-blue-500 transition-colors disabled:opacity-40"
+                  >
+                    <Check className="w-3 h-3" />
+                    {savingOpening ? 'Saving…' : 'Set'}
+                  </button>
+                </div>
+              )}
+            </div>
 
-        {/* Discrepancy preview */}
-        {physicalCash && !isLocked && (
-          <div className={`rounded-lg px-3 py-2 text-sm border ${
-            Number(physicalCash) < (s?.expectedDrawerCash ?? 0)
-              ? 'bg-rose-900/20 border-rose-800/30 text-rose-400'
-              : 'bg-emerald-900/20 border-emerald-800/30 text-emerald-400'
-          }`}>
-            {Number(physicalCash) < (s?.expectedDrawerCash ?? 0) ? (
-              <>Shortage: {formatCurrency((s?.expectedDrawerCash ?? 0) - Number(physicalCash))}</>
-            ) : (
-              <>Surplus: {formatCurrency(Number(physicalCash) - (s?.expectedDrawerCash ?? 0))}</>
-            )}
-          </div>
-        )}
+            {/* Counted cash input */}
+            <div>
+              <label className="text-xs text-slate-400 block mb-1.5">Cash counted in drawer now (৳)</label>
+              <input
+                type="number"
+                min="0"
+                className="input-base text-lg font-bold"
+                placeholder="0"
+                value={drawerCash}
+                onChange={(e) => setDrawerCash(e.target.value)}
+              />
+            </div>
 
-        {/* Locked discrepancy */}
-        {isLocked && closing && (
-          <div className={`rounded-lg px-3 py-2 text-sm border ${
-            closing.discrepancies.cashShortage > 0
-              ? 'bg-rose-900/20 border-rose-800/30 text-rose-400'
-              : 'bg-emerald-900/20 border-emerald-800/30 text-emerald-400'
-          }`}>
-            {closing.discrepancies.cashShortage > 0 ? (
-              <>Cash shortage: {formatCurrency(closing.discrepancies.cashShortage)}</>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <CheckCircle className="w-3.5 h-3.5" />
-                Balanced
+            {/* Comparison */}
+            {actual !== null && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Expected</span>
+                  <span className="text-slate-300">{formatCurrency(expected)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Counted</span>
+                  <span className="text-slate-300">{formatCurrency(actual)}</span>
+                </div>
+                <div className="h-px bg-slate-800" />
+                <div className={`flex items-center justify-between rounded-lg px-3 py-2.5 border ${
+                  isBalanced
+                    ? 'bg-emerald-900/20 border-emerald-800/30'
+                    : isShort
+                    ? 'bg-rose-900/20 border-rose-800/30'
+                    : 'bg-amber-900/20 border-amber-800/30'
+                }`}>
+                  <div className="flex items-center gap-1.5">
+                    {isBalanced ? (
+                      <span className="text-sm text-emerald-400 font-medium">Balanced</span>
+                    ) : isShort ? (
+                      <>
+                        <TrendingDown className="w-4 h-4 text-rose-400" />
+                        <span className="text-sm text-rose-400 font-medium">Short</span>
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp className="w-4 h-4 text-amber-400" />
+                        <span className="text-sm text-amber-400 font-medium">Surplus</span>
+                      </>
+                    )}
+                  </div>
+                  {diff !== 0 && diff !== null && (
+                    <span className={`text-sm font-bold ${isShort ? 'text-rose-400' : 'text-amber-400'}`}>
+                      {isShort ? '-' : '+'}{formatCurrency(Math.abs(diff))}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
-          </div>
-        )}
 
-        {!isLocked && (
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !physicalCash}
-            className="btn-primary w-full"
-          >
-            <Lock className="w-3.5 h-3.5 inline mr-1.5" />
-            {submitting ? 'Locking…' : 'Submit & Lock Day'}
-          </button>
-        )}
+            {actual === null && (
+              <p className="text-xs text-slate-600 mt-auto">
+                Enter counted cash above to compare with expected
+              </p>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   )

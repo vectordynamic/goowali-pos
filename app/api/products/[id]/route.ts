@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
 import Product from '@/models/Product'
-import { validate, ProductUpdateSchema, BranchPricingSchema, objectId } from '@/lib/validators'
+import { validate, ProductUpdateSchema, BranchPricingSchema, VariantSchema, objectId } from '@/lib/validators'
 import { assertBranchAccess, branchDenied } from '@/lib/utils'
 import type { Role } from '@/types'
 
@@ -23,6 +23,29 @@ export async function PATCH(
   if (!idCheck.success) return NextResponse.json({ error: 'Invalid product ID' }, { status: 400 })
 
   const body = await req.json()
+
+  // Variant push — sent as { pushVariant: { variantId, sizeLabel?, branchDetails? } }
+  if (body.pushVariant !== undefined) {
+    const vParsed = VariantSchema.safeParse({ branchDetails: [], ...body.pushVariant })
+    if (!vParsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid variant', errors: vParsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })) },
+        { status: 400 }
+      )
+    }
+    await dbConnect()
+    const exists = await Product.findOne({ _id: id, 'variants.variantId': vParsed.data.variantId })
+    if (exists) return NextResponse.json({ error: `Variant ID "${vParsed.data.variantId}" already exists` }, { status: 409 })
+
+    const product = await Product.findByIdAndUpdate(
+      id,
+      { $push: { variants: vParsed.data } },
+      { new: true }
+    )
+    if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+    return NextResponse.json(product)
+  }
+
   const parsed = validate(ProductUpdateSchema, body)
   if (!parsed.success) return parsed.response
 

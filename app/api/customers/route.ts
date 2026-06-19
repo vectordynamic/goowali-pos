@@ -6,16 +6,20 @@ import Customer from '@/models/Customer'
 import { validate, CustomerCreateSchema } from '@/lib/validators'
 import type { Role } from '@/types'
 
-// GET /api/customers?type=Paikari&search=&branchId=&confirm=1
+// GET /api/customers?type=Retail|Paikari&search=&branchId=&confirm=1&due=1
 // SUPER_ADMIN: all customers
-// BRANCH_ADMIN: only customers from their branches
-// MANAGER (normal): Retail only
-// MANAGER (confirm=1): Paikari names-only for dispatch notification
+// BRANCH_ADMIN: customers from their branches
+// MANAGER (normal): only customers they created (createdBy = their userId)
+// MANAGER (confirm=1): customers with regular orders configured — name+qty+type only
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { role, assignedBranches } = session.user as { role: Role; assignedBranches: string[] }
+  const { role, assignedBranches, id: userId } = session.user as {
+    role: Role
+    assignedBranches: string[]
+    id: string
+  }
 
   const sp = req.nextUrl.searchParams
   const type = sp.get('type')
@@ -38,11 +42,17 @@ export async function GET(req: NextRequest) {
     filter.registeredBranch = { $in: allowed }
   }
 
-  // MANAGER:
-  //   normal view  → Retail only
-  //   confirm=1    → Paikari names for dispatch confirmation (no sensitive data)
   if (role === 'MANAGER') {
-    filter.customerType = confirm ? 'Paikari' : 'Retail'
+    if (confirm) {
+      // Dispatch view: customers with at least one regular order (any type)
+      filter['paikariConfig.fixedProductRates.0'] = { $exists: true }
+    } else if (dueOnly) {
+      // Due page: all branch customers with outstanding dues — no createdBy restriction
+      if (type) filter.customerType = type
+    } else {
+      // Customer list: only customers this manager created (privacy — hides other customers' contact info)
+      filter.createdBy = userId
+    }
   } else if (type) {
     filter.customerType = type
   }
@@ -60,12 +70,13 @@ export async function GET(req: NextRequest) {
 
   const customers = await Customer.find(filter).sort({ name: 1 }).lean()
 
-  // Strip ALL sensitive fields for manager dispatch confirmation — name + _id only
+  // Strip sensitive fields for manager dispatch confirmation — name + type + qty only
   if (role === 'MANAGER' && confirm) {
     return NextResponse.json(
       customers.map((c: any) => ({
         _id: c._id,
         name: c.name,
+        customerType: c.customerType,
         dailyLitres: c.paikariConfig?.dailyRequirementLiters ?? 0
       }))
     )
@@ -75,13 +86,16 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/customers
-// Branch is always required.
-// MANAGER can only create Retail customers.
+// MANAGER can only create Retail customers; createdBy is always set.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { role, assignedBranches } = session.user as { role: Role; assignedBranches: string[] }
+  const { role, assignedBranches, id: userId } = session.user as {
+    role: Role
+    assignedBranches: string[]
+    id: string
+  }
 
   const body = await req.json()
   const parsed = validate(CustomerCreateSchema, body)
@@ -114,6 +128,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Phone already registered' }, { status: 409 })
   }
 
-  const customer = await Customer.create({ ...parsed.data, registeredBranch })
+  const customer = await Customer.create({ ...parsed.data, registeredBranch, createdBy: userId })
   return NextResponse.json(customer, { status: 201 })
 }
