@@ -2,9 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import {
-  Wallet, RefreshCw, Search, Phone, MapPin, X, ChevronDown, ChevronRight
-} from 'lucide-react'
+import { Wallet, RefreshCw, Search, Phone } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
 
@@ -26,7 +24,6 @@ interface Branch {
 interface Props {
   role: Role
   assignedBranches: string[]
-  /** Pins view to a single branch (POS context) */
   forceBranchId?: string
 }
 
@@ -39,7 +36,6 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
   const [search, setSearch] = useState('')
   const [branchFilter, setBranchFilter] = useState(forceBranchId ?? '')
   const [loading, setLoading] = useState(true)
-  const [collectTarget, setCollectTarget] = useState<Customer | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -59,7 +55,6 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
       const branchData = await branchRes.json()
       setBranches(Array.isArray(branchData) ? branchData : [])
     }
-
     setLoading(false)
   }, [activeTab, search, branchFilter, role])
 
@@ -71,32 +66,36 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
   const totalDue = customers.reduce((s, c) => s + c.khata.currentDue, 0)
   const showBranchFilter = role === 'SUPER_ADMIN' && !forceBranchId
 
+  function handleCollected(customerId: string) {
+    setCustomers((prev) => prev.filter((c) => c._id !== customerId))
+  }
+
   return (
     <div>
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-4 border-b border-slate-800">
+      <div className="flex items-center gap-2 mb-4">
         {(['Retail', 'Paikari'] as DueTab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            className={`px-5 py-2.5 text-base font-bold rounded-xl transition-colors border-2 ${
               activeTab === tab
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
             }`}
           >
-            {tab === 'Paikari' ? 'Paikari / Wholesale' : 'Retail'}
+            {tab === 'Paikari' ? 'পাইকারি' : 'খুচরা'}
           </button>
         ))}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4 bg-white border border-gray-200 rounded-2xl p-3 shadow-sm">
         <div className="relative flex-1 min-w-[160px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
-            className="input-base pl-9"
-            placeholder="Search name or phone…"
+            className="linput pl-12"
+            placeholder="নাম বা ফোন খুঁজুন..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -104,65 +103,52 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
 
         {showBranchFilter && branches.length > 1 && (
           <select
-            className="input-base w-44"
+            className="linput w-48"
             value={branchFilter}
             onChange={(e) => setBranchFilter(e.target.value)}
           >
-            <option value="">All branches</option>
+            <option value="">সব শাখা</option>
             {branches.map((b) => (
               <option key={b._id} value={b._id}>{b.name}</option>
             ))}
           </select>
         )}
 
-        <button
-          onClick={load}
-          className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
+        <button onClick={load} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors">
+          <RefreshCw className="w-5 h-5" />
         </button>
 
         {customers.length > 0 && (
-          <div className="ml-auto flex items-center gap-1.5 text-sm">
-            <Wallet className="w-4 h-4 text-rose-400" />
-            <span className="text-rose-400 font-semibold">{formatCurrency(totalDue)}</span>
-            <span className="text-slate-500">total due</span>
+          <div className="ml-auto flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-red-500" />
+            <span className="text-lg font-black text-red-500">{formatCurrency(totalDue)}</span>
+            <span className="text-gray-500 font-bold">মোট বাকি</span>
           </div>
         )}
       </div>
 
       {loading ? (
-        <div className="text-center text-slate-500 py-12 text-sm">Loading due list…</div>
+        <div className="text-center text-gray-400 py-12 text-lg">লোড হচ্ছে...</div>
       ) : customers.length === 0 ? (
-        <div className="text-center py-16">
-          <Wallet className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-          <p className="text-slate-400 font-medium">No outstanding dues</p>
-          <p className="text-slate-600 text-sm mt-1">All {activeTab.toLowerCase()} customers are clear</p>
+        <div className="text-center py-16 lcard">
+          <Wallet className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-lg font-bold text-gray-600">কোনো বাকি নেই</p>
+          <p className="text-gray-400 mt-1">
+            সব {activeTab === 'Retail' ? 'খুচরা' : 'পাইকারি'} কাস্টমারের বাকি পরিশোধ হয়েছে
+          </p>
         </div>
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-2">
           {customers.map((c) => (
             <DueRow
               key={c._id}
               customer={c}
               branchLabel={showBranchFilter ? branchName(c.registeredBranch) : undefined}
-              onCollect={() => setCollectTarget(c)}
+              branchId={forceBranchId || branchFilter || assignedBranches[0] || ''}
+              onCollected={() => handleCollected(c._id)}
             />
           ))}
         </div>
-      )}
-
-      {collectTarget && (
-        <CollectModal
-          customer={collectTarget}
-          branchId={forceBranchId || branchFilter || assignedBranches[0] || ''}
-          onClose={() => setCollectTarget(null)}
-          onSuccess={() => {
-            setCollectTarget(null)
-            load()
-          }}
-        />
       )}
     </div>
   )
@@ -171,196 +157,121 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
 function DueRow({
   customer,
   branchLabel,
-  onCollect
+  branchId,
+  onCollected,
 }: {
   customer: Customer
   branchLabel?: string
-  onCollect: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-
-  return (
-    <div className="card overflow-hidden">
-      <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-800/30 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded
-          ? <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />
-          : <ChevronRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
-        }
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-100">{customer.name}</span>
-            {branchLabel && (
-              <span className="text-xs text-slate-600 bg-slate-800 px-1.5 py-0.5 rounded">
-                {branchLabel}
-              </span>
-            )}
-          </div>
-          {customer.phone && (
-            <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-              <Phone className="w-3 h-3" />
-              {customer.phone}
-              {customer.location && (
-                <>
-                  <span className="mx-1">·</span>
-                  <MapPin className="w-3 h-3" />
-                  {customer.location}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="text-rose-400 font-semibold">
-            {formatCurrency(customer.khata.currentDue)}
-          </span>
-          <button
-            onClick={(e) => { e.stopPropagation(); onCollect() }}
-            className="px-3 py-1.5 text-xs font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 rounded-md hover:bg-emerald-600/30 transition-colors"
-          >
-            Collect
-          </button>
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="px-4 pb-3 pt-1 border-t border-slate-800/50 bg-slate-900/20">
-          <p className="text-xs text-slate-500 mb-1">Customer Details</p>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <span className="text-slate-600">Type:</span>{' '}
-              <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${
-                customer.customerType === 'Paikari'
-                  ? 'bg-amber-900/30 text-amber-400'
-                  : 'bg-blue-900/30 text-blue-400'
-              }`}>{customer.customerType}</span>
-            </div>
-            <div>
-              <span className="text-slate-600">Credit limit:</span>{' '}
-              <span className="text-slate-300">{formatCurrency(customer.khata.creditLimit)}</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function CollectModal({
-  customer,
-  branchId,
-  onClose,
-  onSuccess
-}: {
-  customer: Customer
   branchId: string
-  onClose: () => void
-  onSuccess: () => void
+  onCollected: () => void
 }) {
-  const [amount, setAmount] = useState(customer.khata.currentDue)
-  const [notes, setNotes] = useState('')
+  const [open, setOpen] = useState(false)
+  const [amount, setAmount] = useState(String(customer.khata.currentDue))
   const [submitting, setSubmitting] = useState(false)
 
-  const remaining = Math.max(0, customer.khata.currentDue - amount)
-  const isFullPayment = amount >= customer.khata.currentDue
+  const remaining = Math.max(0, customer.khata.currentDue - Number(amount))
+  const isFull = Number(amount) >= customer.khata.currentDue
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!amount || amount <= 0) {
-      toast.error('Enter a valid amount')
-      return
-    }
-    if (!branchId) {
-      toast.error('Branch not identified')
-      return
-    }
+  async function handleCollect() {
+    const amt = Number(amount)
+    if (!amt || amt <= 0) { toast.error('সঠিক পরিমাণ দিন'); return }
+    if (!branchId) { toast.error('শাখা নির্ধারণ হয়নি'); return }
 
     setSubmitting(true)
     const res = await fetch(`/api/customers/${customer._id}?action=collect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ branchId, amountCollected: amount, notes: notes || undefined })
+      body: JSON.stringify({ branchId, amountCollected: amt }),
     })
     setSubmitting(false)
 
     if (res.ok) {
       toast.success(
-        isFullPayment
-          ? `${customer.name}: due cleared`
-          : `${customer.name}: ${formatCurrency(amount)} collected, ${formatCurrency(remaining)} remaining`
+        isFull
+          ? `${customer.name}: বাকি শেষ হয়েছে ✓`
+          : `${customer.name}: ${formatCurrency(amt)} আদায়, ${formatCurrency(remaining)} বাকি আছে`
       )
-      onSuccess()
+      onCollected()
     } else {
       const err = await res.json()
-      toast.error(err.error ?? 'Collection failed')
+      toast.error(err.error ?? 'আদায় হয়নি')
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-sm">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <h2 className="text-base font-semibold text-slate-100">Collect Payment</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
-            <X className="w-4 h-4" />
-          </button>
+    <div className={`lcard overflow-hidden transition-all ${open ? 'ring-2 ring-blue-200' : ''}`}>
+      {/* Main row — always visible */}
+      <div className="flex items-center gap-3 px-4 py-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-base font-black text-gray-800">{customer.name}</span>
+            {branchLabel && (
+              <span className="text-sm text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg">{branchLabel}</span>
+            )}
+          </div>
+          {customer.phone && (
+            <div className="flex items-center gap-1 text-sm text-gray-500 mt-0.5">
+              <Phone className="w-3.5 h-3.5" />
+              {customer.phone}
+            </div>
+          )}
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div className="bg-slate-800/50 rounded-lg p-3">
-            <p className="text-sm text-slate-200 font-medium">{customer.name}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{customer.phone}</p>
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-slate-500">Current Due</span>
-              <span className="text-rose-400 font-bold">{formatCurrency(customer.khata.currentDue)}</span>
+        <span className="text-lg font-black text-red-500 flex-shrink-0">
+          {formatCurrency(customer.khata.currentDue)}
+        </span>
+
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className={`flex-shrink-0 px-4 py-2 text-base font-bold rounded-xl transition-colors ${
+            open
+              ? 'bg-gray-200 text-gray-600'
+              : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+          }`}
+        >
+          {open ? 'বন্ধ করুন' : 'আদায়'}
+        </button>
+      </div>
+
+      {/* Inline collect form — no modal */}
+      {open && (
+        <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-gray-50 space-y-3">
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="text-sm font-bold text-gray-600 block mb-1.5">
+                কত টাকা নিলেন? (৳)
+              </label>
+              <input
+                type="number"
+                className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-xl font-black text-gray-800 bg-white focus:outline-none focus:border-blue-400"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                min={1}
+                max={customer.khata.currentDue}
+                autoFocus
+              />
             </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Amount Received ৳ *</label>
-            <input
-              type="number"
-              className="input-base text-lg font-bold"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-              min={1}
-              max={customer.khata.currentDue}
-              required
-              autoFocus
-            />
-          </div>
-
-          {amount > 0 && amount < customer.khata.currentDue && (
-            <p className="text-xs text-amber-400 bg-amber-900/20 rounded-lg px-3 py-2 border border-amber-800/30">
-              Partial payment — {formatCurrency(remaining)} will remain as due
-            </p>
-          )}
-          {amount >= customer.khata.currentDue && (
-            <p className="text-xs text-emerald-400 bg-emerald-900/20 rounded-lg px-3 py-2 border border-emerald-800/30">
-              Full payment — due will be cleared
-            </p>
-          )}
-
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Notes (optional)</label>
-            <input
-              className="input-base"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Cash collected on visit"
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={submitting} className="btn-primary flex-1">
-              {submitting ? 'Processing…' : 'Confirm Collection'}
+            <button
+              onClick={handleCollect}
+              disabled={submitting}
+              className="px-5 py-3 bg-green-500 hover:bg-green-600 text-white font-black text-base rounded-xl transition-colors disabled:opacity-40 shadow-sm"
+            >
+              {submitting ? '...' : 'নিশ্চিত ✓'}
             </button>
           </div>
-        </form>
-      </div>
+
+          {Number(amount) > 0 && Number(amount) < customer.khata.currentDue && (
+            <p className="text-base font-bold text-amber-600 bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-200">
+              আংশিক — {formatCurrency(remaining)} এখনো বাকি থাকবে
+            </p>
+          )}
+          {Number(amount) >= customer.khata.currentDue && Number(amount) > 0 && (
+            <p className="text-base font-bold text-green-600 bg-green-50 rounded-xl px-4 py-2.5 border border-green-200">
+              ✓ সম্পূর্ণ — বাকি শেষ হয়ে যাবে
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

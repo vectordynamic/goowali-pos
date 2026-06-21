@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { Package, Plus, ChevronDown, ChevronUp, Check, X } from 'lucide-react'
+import { Package, ChevronDown, ChevronUp, Check } from 'lucide-react'
 
 interface BranchDetail {
   branchId: string
@@ -24,41 +24,28 @@ interface Product {
   variants: Variant[]
 }
 
-interface AddForm {
-  productId: string
-  variantId: string
-  action: 'add' | 'set'
+interface RowState {
   quantity: string
   buyingPrice: string
+  setMode: boolean        // false = add (default), true = set total
   recordAsPurchase: boolean
-  notes: string
+  saving: boolean
 }
-
-const emptyForm = (): AddForm => ({
-  productId: '',
-  variantId: '',
-  action: 'add',
-  quantity: '',
-  buyingPrice: '',
-  recordAsPurchase: false,
-  notes: ''
-})
 
 export default function StockManager({ branchId }: { branchId: string }) {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState<AddForm | null>(null)
-  const [saving, setSaving] = useState(false)
   const [expanded, setExpanded] = useState(true)
+  const [rows, setRows] = useState<Record<string, RowState>>({})
 
   const loadProducts = useCallback(() => {
     setLoading(true)
     fetch(`/api/products?branchId=${branchId}&context=stock`)
       .then((r) => r.json())
       .then((data) => setProducts(Array.isArray(data) ? data : []))
-      .catch(() => toast.error('Failed to load products'))
+      .catch(() => toast.error('স্টক লোড হয়নি'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [branchId])
 
   useEffect(() => { loadProducts() }, [loadProducts])
 
@@ -69,91 +56,106 @@ export default function StockManager({ branchId }: { branchId: string }) {
     return { stockLevel: bd?.stockLevel ?? 0, buyingPrice: bd?.buyingPrice ?? 0 }
   }
 
-  function openForm(productId: string, variantId: string, currentBuyingPrice: number) {
-    setForm({ ...emptyForm(), productId, variantId, buyingPrice: String(currentBuyingPrice || ''), recordAsPurchase: false })
+  function rowKey(productId: string, variantId: string) {
+    return `${productId}:${variantId}`
   }
 
-  async function handleSave() {
-    if (!form) return
-    const qty = Number(form.quantity)
+  function getRow(key: string, buyingPrice: number): RowState {
+    return rows[key] ?? {
+      quantity: '',
+      buyingPrice: buyingPrice > 0 ? '' : '',
+      setMode: false,
+      recordAsPurchase: false,
+      saving: false,
+    }
+  }
+
+  function setRow(key: string, patch: Partial<RowState>) {
+    setRows((prev) => ({ ...prev, [key]: { ...getRow(key, 0), ...prev[key], ...patch } }))
+  }
+
+  async function handleSave(product: Product, variant: Variant) {
+    const { stockLevel, buyingPrice: currentBuyingPrice } = getStock(product, variant.variantId)
+    const key = rowKey(product._id, variant.variantId)
+    const row = rows[key] ?? getRow(key, currentBuyingPrice)
+
+    const qty = Number(row.quantity)
     if (!qty || qty <= 0) {
-      toast.error('Enter a valid quantity')
+      toast.error('কত পেলেন সেটা লিখুন')
+      return
+    }
+    if (currentBuyingPrice === 0 && row.buyingPrice === '') {
+      toast.error('ক্রয় মূল্য দিন')
       return
     }
 
-    const currentStock = getStock(
-      products.find((p) => p._id === form.productId)!,
-      form.variantId
-    )
-    if (currentStock.buyingPrice === 0 && form.buyingPrice === '') {
-      toast.error('Enter the buying price — this product has no price set yet')
-      return
-    }
+    setRow(key, { saving: true })
 
-    setSaving(true)
     const res = await fetch('/api/stock-log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         branchId,
-        productId: form.productId,
-        variantId: form.variantId,
-        action: form.action,
+        productId: product._id,
+        variantId: variant.variantId,
+        action: row.setMode ? 'set' : 'add',
         quantity: qty,
-        buyingPrice: form.buyingPrice !== '' ? Number(form.buyingPrice) : undefined,
-        recordAsPurchase: form.recordAsPurchase,
-        notes: form.notes || undefined
-      })
+        buyingPrice: row.buyingPrice !== '' ? Number(row.buyingPrice) : undefined,
+        recordAsPurchase: row.recordAsPurchase,
+      }),
     })
-    setSaving(false)
 
     if (!res.ok) {
       const err = await res.json()
-      toast.error(err.error ?? 'Failed to update stock')
+      toast.error(err.error ?? 'স্টক আপডেট হয়নি')
+      setRow(key, { saving: false })
       return
     }
 
-    const { stockLevel, procurementId } = await res.json()
+    const { stockLevel: newStock, procurementId } = await res.json()
 
-    // Update local state so the new stock shows immediately
     setProducts((prev) =>
       prev.map((p) => {
-        if (p._id !== form.productId) return p
+        if (p._id !== product._id) return p
         return {
           ...p,
           variants: p.variants.map((v) => {
-            if (v.variantId !== form.variantId) return v
+            if (v.variantId !== variant.variantId) return v
             const hasBd = v.branchDetails.some((b) => b.branchId === branchId)
             return {
               ...v,
               branchDetails: hasBd
                 ? v.branchDetails.map((b) =>
                     b.branchId === branchId
-                      ? { ...b, stockLevel, buyingPrice: form.buyingPrice !== '' ? Number(form.buyingPrice) : b.buyingPrice }
+                      ? { ...b, stockLevel: newStock, buyingPrice: row.buyingPrice !== '' ? Number(row.buyingPrice) : b.buyingPrice }
                       : b
                   )
-                : [...v.branchDetails, { branchId, stockLevel, buyingPrice: Number(form.buyingPrice) || 0 }]
+                : [...v.branchDetails, { branchId, stockLevel: newStock, buyingPrice: Number(row.buyingPrice) || 0 }],
             }
-          })
+          }),
         }
       })
     )
 
-    if (form.recordAsPurchase && procurementId) {
-      toast.success(`Stock updated & purchase recorded — now ${stockLevel}`)
-    } else {
-      toast.success(`Stock updated — now ${stockLevel}`)
-    }
-    setForm(null)
+    toast.success(
+      procurementId
+        ? `স্টক আপডেট ও কেনা রেকর্ড — এখন ${newStock}`
+        : `স্টক আপডেট — এখন ${newStock}`
+    )
+
+    // Reset this row
+    setRows((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
   }
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-        <div className="flex items-center gap-2">
-          <Package className="w-4 h-4 text-slate-500" />
-          <span className="text-sm text-slate-500">Loading stock…</span>
-        </div>
+      <div className="lcard p-4 flex items-center gap-2">
+        <Package className="w-5 h-5 text-gray-400" />
+        <span className="text-base text-gray-400">স্টক লোড হচ্ছে...</span>
       </div>
     )
   }
@@ -161,160 +163,132 @@ export default function StockManager({ branchId }: { branchId: string }) {
   if (products.length === 0) return null
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-      {/* Header */}
+    <div className="lcard overflow-hidden">
+      {/* Collapse toggle */}
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center gap-2 px-4 py-3 border-b border-slate-800 hover:bg-slate-800/30 transition-colors"
+        className="w-full flex items-center gap-3 px-5 py-4 bg-gray-50 hover:bg-gray-100 transition-colors border-b border-gray-200"
       >
-        <Package className="w-4 h-4 text-slate-400" />
-        <span className="text-sm font-semibold text-slate-200">Stock Management</span>
-        <span className="ml-auto text-slate-600">
-          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        <Package className="w-5 h-5 text-blue-600" />
+        <span className="text-base font-black text-gray-800">স্টক ম্যানেজমেন্ট</span>
+        <span className="ml-auto text-gray-400">
+          {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </span>
       </button>
 
       {expanded && (
-        <div className="divide-y divide-slate-800/60">
+        <div className="divide-y divide-gray-100">
           {products.map((product) =>
             product.variants.map((variant) => {
               const { stockLevel, buyingPrice } = getStock(product, variant.variantId)
-              const isEditing = form?.productId === product._id && form?.variantId === variant.variantId
-              const label = variant.sizeLabel ? `${variant.sizeLabel}` : variant.variantId
+              const key = rowKey(product._id, variant.variantId)
+              const row = getRow(key, buyingPrice)
+              const unit = product.unitType === 'Liquid' ? 'L' : product.unitType === 'Weight' ? 'kg' : 'পিস'
+              const label = variant.sizeLabel ?? variant.variantId
+              const preview = !row.setMode && row.quantity
+                ? `${stockLevel} + ${row.quantity} = ${stockLevel + Number(row.quantity)}`
+                : null
 
               return (
-                <div key={`${product._id}-${variant.variantId}`}>
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-100 truncate">{product.name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {label}
-                        <span className={`ml-2 font-medium ${stockLevel <= 0 ? 'text-rose-400' : stockLevel < 5 ? 'text-amber-400' : 'text-slate-300'}`}>
-                          {stockLevel} {product.unitType === 'Liquid' ? 'L' : product.unitType === 'Weight' ? 'kg' : 'pcs'}
+                <div key={key} className="px-5 py-4 space-y-3">
+                  {/* Product info */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-base font-black text-gray-800">{product.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {label} ·{' '}
+                        <span className={`font-bold ${
+                          stockLevel <= 0 ? 'text-red-500' :
+                          stockLevel < 5 ? 'text-amber-600' : 'text-green-600'
+                        }`}>
+                          আছে: {stockLevel} {unit}
                         </span>
                         {buyingPrice > 0 && (
-                          <span className="text-slate-600 ml-2">cost ৳{buyingPrice}</span>
+                          <span className="text-gray-400 ml-2">ক্রয়: ৳{buyingPrice}</span>
                         )}
                       </p>
                     </div>
-                    {isEditing ? (
-                      <button
-                        onClick={() => setForm(null)}
-                        className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => openForm(product._id, variant.variantId, buyingPrice)}
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 border border-slate-700 rounded-md hover:border-blue-700 hover:text-blue-400 transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Add Stock
-                      </button>
+                    {preview && (
+                      <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-xl">
+                        → {stockLevel + Number(row.quantity)} {unit}
+                      </span>
                     )}
                   </div>
 
-                  {/* Inline add form */}
-                  {isEditing && form && (
-                    <div className="px-4 pb-4 space-y-3 bg-slate-800/20 border-t border-slate-800/60">
-                      {/* Action toggle */}
-                      <div className="flex gap-2 pt-3">
-                        {(['add', 'set'] as const).map((a) => (
-                          <button
-                            key={a}
-                            onClick={() => setForm({ ...form, action: a })}
-                            className={`px-3 py-1 text-xs font-medium rounded-md border transition-colors ${
-                              form.action === a
-                                ? 'bg-blue-600 border-blue-500 text-white'
-                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                            }`}
-                          >
-                            {a === 'add' ? '+ Add to stock' : '= Set total'}
-                          </button>
-                        ))}
-                      </div>
+                  {/* Always-visible quick form */}
+                  <div className="flex items-end gap-2 flex-wrap">
+                    {/* Qty */}
+                    <div className="flex-1 min-w-[80px]">
+                      <label className="text-xs font-bold text-gray-500 block mb-1">
+                        {row.setMode ? 'মোট কত হবে' : 'কত পেলেন'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step={product.isOpenLoose ? '0.1' : '1'}
+                        className="w-full border-2 border-gray-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-blue-400 placeholder:text-gray-300"
+                        placeholder="০"
+                        value={row.quantity}
+                        onChange={(e) => setRow(key, { quantity: e.target.value })}
+                      />
+                    </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-slate-400 block mb-1">
-                            {form.action === 'add' ? 'Quantity received' : 'New total stock'}
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step={product.isOpenLoose ? '0.1' : '1'}
-                            className="input-base"
-                            placeholder="0"
-                            value={form.quantity}
-                            onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs block mb-1">
-                            {buyingPrice > 0 ? (
-                              <span className="text-slate-400">Buying price ৳ <span className="text-slate-600">(optional — current: ৳{buyingPrice})</span></span>
-                            ) : (
-                              <span className="text-amber-400 font-medium">Buying price ৳ <span className="text-slate-500">(required — not set yet)</span></span>
-                            )}
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            required={buyingPrice === 0}
-                            className={`input-base ${buyingPrice === 0 ? 'border-amber-700/60 focus:border-amber-500' : ''}`}
-                            placeholder={buyingPrice > 0 ? `${buyingPrice} (keep current)` : 'Enter buying price'}
-                            value={form.buyingPrice}
-                            onChange={(e) => setForm({ ...form, buyingPrice: e.target.value })}
-                          />
-                        </div>
-                      </div>
+                    {/* Buying price — always show, required when not set */}
+                    <div className="flex-1 min-w-[90px]">
+                      <label className={`text-xs font-bold block mb-1 ${buyingPrice === 0 ? 'text-amber-600' : 'text-gray-500'}`}>
+                        {buyingPrice > 0 ? `ক্রয় মূল্য (৳${buyingPrice})` : 'ক্রয় মূল্য ৳ *'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        className={`w-full border-2 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none placeholder:text-gray-300 ${
+                          buyingPrice === 0
+                            ? 'border-amber-400 focus:border-amber-500'
+                            : 'border-gray-300 focus:border-blue-400'
+                        }`}
+                        placeholder={buyingPrice > 0 ? `${buyingPrice}` : 'দাম'}
+                        value={row.buyingPrice}
+                        onChange={(e) => setRow(key, { buyingPrice: e.target.value })}
+                      />
+                    </div>
 
-                      <div>
-                        <label className="text-xs text-slate-400 block mb-1">Notes (optional)</label>
+                    {/* Save button */}
+                    <button
+                      onClick={() => handleSave(product, variant)}
+                      disabled={row.saving || !row.quantity}
+                      className="flex items-center gap-1.5 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-base"
+                    >
+                      <Check className="w-4 h-4" />
+                      {row.saving ? 'সেভ...' : 'সেভ'}
+                    </button>
+                  </div>
+
+                  {/* Secondary options — compact, shown only when row has data */}
+                  {row.quantity && (
+                    <div className="flex items-center gap-4 flex-wrap pl-1">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-gray-600">
                         <input
-                          type="text"
-                          className="input-base"
-                          placeholder="e.g. Morning delivery"
-                          value={form.notes}
-                          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                          type="checkbox"
+                          checked={row.setMode}
+                          onChange={(e) => setRow(key, { setMode: e.target.checked })}
+                          className="w-4 h-4 accent-blue-600"
                         />
-                      </div>
-
-                      {form.action === 'add' && form.quantity && (
-                        <p className="text-xs text-slate-400">
-                          {stockLevel} + {form.quantity} = <span className="text-slate-200 font-medium">{stockLevel + Number(form.quantity)}</span> after save
-                        </p>
-                      )}
-
-                      {/* Procurement toggle — only makes sense when adding stock with a buying price */}
-                      {form.action === 'add' && (
-                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={form.recordAsPurchase}
-                            onChange={(e) => setForm({ ...form, recordAsPurchase: e.target.checked })}
-                            className="w-3.5 h-3.5 accent-blue-500"
-                          />
-                          <span className="text-xs text-slate-300">
-                            Paid from store cash
-                            {form.recordAsPurchase && form.quantity && form.buyingPrice && (
-                              <span className="text-blue-400 ml-1">
-                                — records ৳{(Number(form.quantity) * Number(form.buyingPrice)).toLocaleString()} purchase
-                              </span>
-                            )}
+                        মোট সেট করতে চাই
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={row.recordAsPurchase}
+                          onChange={(e) => setRow(key, { recordAsPurchase: e.target.checked })}
+                          className="w-4 h-4 accent-blue-600"
+                        />
+                        দোকানের টাকায় কিনেছি
+                        {row.recordAsPurchase && row.quantity && row.buyingPrice && (
+                          <span className="text-blue-600 font-black ml-1">
+                            ৳{(Number(row.quantity) * Number(row.buyingPrice)).toLocaleString()}
                           </span>
-                        </label>
-                      )}
-
-                      <button
-                        onClick={handleSave}
-                        disabled={saving || !form.quantity}
-                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-600 border border-emerald-500 rounded-md hover:bg-emerald-500 transition-colors disabled:opacity-40"
-                      >
-                        <Check className="w-3 h-3" />
-                        {saving ? 'Saving…' : 'Save Stock'}
-                      </button>
+                        )}
+                      </label>
                     </div>
                   )}
                 </div>

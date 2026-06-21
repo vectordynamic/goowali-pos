@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { RefreshCw, Search, Receipt, User, ChevronDown } from 'lucide-react'
+import { RefreshCw, Receipt, User, ChevronDown } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
 import DailyOrders from './DailyOrders'
@@ -40,13 +40,22 @@ function todayDate() {
   return new Date().toISOString().split('T')[0]
 }
 
+const TYPE_BN: Record<string, string> = {
+  'Cash Sale': 'নগদ বিক্রি',
+  'Credit Sale': 'বাকিতে বিক্রি',
+  'Partial Payment': 'আংশিক নগদ',
+  'Due Collection': 'বাকি আদায়',
+  'Expense': 'খরচ',
+  'Procurement': 'স্টক কেনা',
+}
+
 const TYPE_COLORS: Record<string, string> = {
-  'Cash Sale': 'bg-emerald-900/30 text-emerald-400',
-  'Credit Sale': 'bg-amber-900/30 text-amber-400',
-  'Partial Payment': 'bg-blue-900/30 text-blue-400',
-  'Due Collection': 'bg-violet-900/30 text-violet-400',
-  'Expense': 'bg-rose-900/30 text-rose-400',
-  'Procurement': 'bg-slate-700 text-slate-400'
+  'Cash Sale': 'bg-green-100 text-green-700',
+  'Credit Sale': 'bg-amber-100 text-amber-700',
+  'Partial Payment': 'bg-blue-100 text-blue-700',
+  'Due Collection': 'bg-purple-100 text-purple-700',
+  'Expense': 'bg-red-100 text-red-600',
+  'Procurement': 'bg-gray-100 text-gray-600',
 }
 
 export default function SalesLog({ branchId, role }: Props) {
@@ -64,7 +73,7 @@ export default function SalesLog({ branchId, role }: Props) {
     fetch(`/api/transactions?${params}`)
       .then((r) => r.json())
       .then((data) => setTransactions(Array.isArray(data) ? data : []))
-      .catch(() => toast.error('Failed to load transactions'))
+      .catch(() => toast.error('লোড হয়নি'))
       .finally(() => setLoading(false))
   }, [branchId, date, typeFilter])
 
@@ -72,182 +81,157 @@ export default function SalesLog({ branchId, role }: Props) {
 
   const SALE_TYPES = ['Cash Sale', 'Credit Sale', 'Partial Payment']
   const saleCount = transactions.filter((t) => SALE_TYPES.includes(t.transactionType)).length
-
-  const total = transactions.reduce((s, t) => s + t.financials.totalBill, 0)
   const cashTotal = transactions.reduce((s, t) => s + t.financials.cashPaid, 0)
   const khataTotal = transactions.reduce((s, t) => s + t.financials.amountAddedToKhata, 0)
+  const total = transactions.reduce((s, t) => s + t.financials.totalBill, 0)
 
   const isToday = date === todayDate()
 
   return (
     <div className="space-y-4">
-      {/* Regular orders checklist — only shown for today */}
       {isToday && (
-        <DailyOrders
-          branchId={branchId}
-          date={date}
-          onTaken={load}
-        />
+        <DailyOrders branchId={branchId} date={date} onTaken={load} />
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 bg-white border border-gray-200 rounded-2xl p-3 shadow-sm">
         <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Date</label>
+          <label className="text-sm font-bold text-gray-600">তারিখ</label>
           <input
             type="date"
-            className="input-base w-auto"
+            className="border-2 border-gray-300 rounded-xl px-3 py-2 text-base text-gray-800 bg-white focus:outline-none focus:border-blue-400"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
         </div>
 
         <select
-          className="input-base w-40"
+          className="border-2 border-gray-300 rounded-xl px-3 py-2 text-base text-gray-800 bg-white focus:outline-none focus:border-blue-400"
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
         >
-          <option value="">All types</option>
-          <option value="Cash Sale">Cash Sale</option>
-          <option value="Credit Sale">Credit Sale</option>
-          <option value="Partial Payment">Partial Payment</option>
-          <option value="Due Collection">Due Collection</option>
+          <option value="">সব ধরন</option>
+          <option value="Cash Sale">নগদ বিক্রি</option>
+          <option value="Credit Sale">বাকিতে বিক্রি</option>
+          <option value="Partial Payment">আংশিক নগদ</option>
+          <option value="Due Collection">বাকি আদায়</option>
         </select>
 
         <button
           onClick={load}
-          className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded transition-colors"
-          title="Refresh"
+          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+          title="রিফ্রেশ"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
+          <RefreshCw className="w-5 h-5" />
         </button>
 
         <button
           onClick={() => setDate(todayDate())}
-          className="btn-secondary text-xs"
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors"
         >
-          Today
+          আজকের
         </button>
       </div>
 
-      {/* Summary strip */}
+      {/* Summary */}
       {!loading && transactions.length > 0 && (
-        <div className="flex gap-3 flex-wrap">
-          <div className="card px-4 py-2 flex items-center gap-2">
-            <span className="text-xs text-slate-500">Total Sales</span>
-            <span className="text-sm font-bold text-slate-100">{saleCount}</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="lcard px-4 py-3">
+            <p className="text-sm text-gray-500 mb-1">মোট বিক্রি</p>
+            <p className="text-2xl font-black text-gray-800">{saleCount}</p>
           </div>
           {role !== 'MANAGER' && (
-            <div className="card px-4 py-2 flex items-center gap-2">
-              <span className="text-xs text-slate-500">Revenue</span>
-              <span className="text-sm font-bold text-emerald-400">{formatCurrency(total)}</span>
+            <div className="lcard px-4 py-3">
+              <p className="text-sm text-gray-500 mb-1">মোট টাকা</p>
+              <p className="text-xl font-black text-green-600">{formatCurrency(total)}</p>
             </div>
           )}
-          <div className="card px-4 py-2 flex items-center gap-2">
-            <span className="text-xs text-slate-500">Cash In</span>
-            <span className="text-sm font-bold text-blue-400">{formatCurrency(cashTotal)}</span>
+          <div className="lcard px-4 py-3">
+            <p className="text-sm text-gray-500 mb-1">নগদ পেয়েছি</p>
+            <p className="text-xl font-black text-blue-600">{formatCurrency(cashTotal)}</p>
           </div>
           {khataTotal > 0 && (
-            <div className="card px-4 py-2 flex items-center gap-2">
-              <span className="text-xs text-slate-500">Credit Given</span>
-              <span className="text-sm font-bold text-amber-400">{formatCurrency(khataTotal)}</span>
+            <div className="lcard px-4 py-3">
+              <p className="text-sm text-gray-500 mb-1">বাকি দিয়েছি</p>
+              <p className="text-xl font-black text-amber-600">{formatCurrency(khataTotal)}</p>
             </div>
           )}
         </div>
       )}
 
       {loading ? (
-        <div className="text-center text-slate-500 py-12 text-sm">Loading sales log…</div>
+        <div className="text-center text-gray-400 py-12 text-lg">লোড হচ্ছে...</div>
       ) : transactions.length === 0 ? (
-        <div className="text-center py-16">
-          <Receipt className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-          <p className="text-slate-400 font-medium">No transactions</p>
-          <p className="text-slate-600 text-sm mt-1">No sales logged for this date</p>
+        <div className="text-center py-16 lcard">
+          <Receipt className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-lg font-bold text-gray-600">কোনো বিক্রি নেই</p>
+          <p className="text-gray-400 mt-1">এই তারিখে কোনো বিক্রির হিসাব নেই</p>
         </div>
       ) : (
         <div className="space-y-2">
           {transactions.map((tx) => {
             const isOpen = expanded === tx._id
             return (
-              <div key={tx._id} className="card overflow-hidden">
-                {/* Row header */}
+              <div key={tx._id} className="lcard overflow-hidden">
                 <button
                   onClick={() => setExpanded(isOpen ? null : tx._id)}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/30 transition-colors"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
                 >
-                  {/* Time */}
-                  <span className="text-xs font-mono text-slate-500 w-14 shrink-0">
-                    {new Date(tx.createdAt).toLocaleTimeString('en-BD', {
+                  <span className="text-sm font-bold text-gray-500 w-16 shrink-0">
+                    {new Date(tx.createdAt).toLocaleTimeString('bn-BD', {
                       hour: '2-digit',
                       minute: '2-digit',
-                      hour12: true
+                      hour12: true,
                     })}
                   </span>
 
-                  {/* Type badge */}
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
-                    TYPE_COLORS[tx.transactionType] ?? 'bg-slate-700 text-slate-400'
+                  <span className={`text-sm px-2.5 py-1 rounded-xl font-bold shrink-0 ${
+                    TYPE_COLORS[tx.transactionType] ?? 'bg-gray-100 text-gray-600'
                   }`}>
-                    {tx.transactionType}
+                    {TYPE_BN[tx.transactionType] ?? tx.transactionType}
                   </span>
 
-                  {/* Customer */}
-                  <span className="flex items-center gap-1 text-sm text-slate-400 flex-1 min-w-0">
-                    <User className="w-3 h-3 shrink-0 text-slate-600" />
-                    <span className="truncate">
+                  <span className="flex items-center gap-1 text-base text-gray-600 flex-1 min-w-0">
+                    <User className="w-4 h-4 shrink-0 text-gray-400" />
+                    <span className="truncate font-medium">
                       {tx.customerId?.name ?? (
-                        tx.transactionType === 'Procurement' ? 'Stock Purchase' :
-                        tx.transactionType === 'Expense' ? 'Store Expense' :
-                        'Walk-in'
+                        tx.transactionType === 'Procurement' ? 'স্টক কেনা' :
+                        tx.transactionType === 'Expense' ? 'খরচ' : 'সাধারণ কাস্টমার'
                       )}
                     </span>
                   </span>
 
-                  {/* Item summary */}
-                  <span className="text-xs text-slate-500 hidden sm:block shrink-0">
-                    {tx.items.length} item{tx.items.length !== 1 ? 's' : ''}
-                  </span>
-
-                  {/* Total */}
-                  <span className="text-sm font-bold text-emerald-400 shrink-0">
+                  <span className="text-base font-black text-gray-800 shrink-0">
                     {formatCurrency(tx.financials.totalBill)}
                   </span>
 
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-600 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
 
-                {/* Expanded detail */}
                 {isOpen && (
-                  <div className="border-t border-slate-800 px-4 pb-4 pt-3 bg-slate-800/20 space-y-3">
-                    {/* Invoice + recorded by */}
-                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                  <div className="border-t border-gray-100 px-4 pb-4 pt-3 bg-gray-50 space-y-3">
+                    <div className="flex items-center gap-4 text-sm text-gray-400">
                       <span className="font-mono">{tx.invoiceId}</span>
-                      {tx.recordedBy && <span>by {tx.recordedBy.name}</span>}
+                      {tx.recordedBy && <span>— {tx.recordedBy.name}</span>}
                     </div>
 
-                    {/* Items table */}
                     {tx.items.length > 0 && (
-                      <table className="w-full text-sm">
+                      <table className="w-full text-base">
                         <thead>
-                          <tr className="border-b border-slate-700">
-                            <th className="text-left py-1 text-xs text-slate-500 font-medium">Variant</th>
-                            <th className="text-right py-1 text-xs text-slate-500 font-medium">Qty</th>
-                            <th className="text-right py-1 text-xs text-slate-500 font-medium">Rate</th>
-                            <th className="text-right py-1 text-xs text-slate-500 font-medium">Subtotal</th>
+                          <tr className="border-b border-gray-200">
+                            <th className="text-left py-2 text-sm text-gray-500 font-bold">পণ্য</th>
+                            <th className="text-right py-2 text-sm text-gray-500 font-bold">পরিমাণ</th>
+                            <th className="text-right py-2 text-sm text-gray-500 font-bold">দাম</th>
+                            <th className="text-right py-2 text-sm text-gray-500 font-bold">মোট</th>
                           </tr>
                         </thead>
                         <tbody>
                           {tx.items.map((item, i) => (
-                            <tr key={i} className="border-b border-slate-800/50">
-                              <td className="py-1.5 text-slate-300 font-mono text-xs">
-                                {item.variantId}
-                                {item.isCustomOverride && (
-                                  <span className="ml-1.5 text-amber-400 text-[10px]">custom rate</span>
-                                )}
-                              </td>
-                              <td className="py-1.5 text-right text-slate-300">{item.quantity}</td>
-                              <td className="py-1.5 text-right text-slate-300">{formatCurrency(item.rateApplied)}</td>
-                              <td className="py-1.5 text-right text-slate-200 font-medium">
+                            <tr key={i} className="border-b border-gray-100">
+                              <td className="py-2 text-gray-700 font-medium">{item.variantId}</td>
+                              <td className="py-2 text-right text-gray-700">{item.quantity}</td>
+                              <td className="py-2 text-right text-gray-700">{formatCurrency(item.rateApplied)}</td>
+                              <td className="py-2 text-right font-bold text-gray-800">
                                 {formatCurrency(item.rateApplied * item.quantity)}
                               </td>
                             </tr>
@@ -256,30 +240,23 @@ export default function SalesLog({ branchId, role }: Props) {
                       </table>
                     )}
 
-                    {/* Payment breakdown */}
-                    <div className="flex flex-wrap gap-4 text-xs pt-1">
+                    <div className="flex flex-wrap gap-4 text-sm pt-1">
                       {role !== 'MANAGER' && (
                         <div>
-                          <span className="text-slate-500">Total: </span>
-                          <span className="text-emerald-400 font-medium">{formatCurrency(tx.financials.totalBill)}</span>
+                          <span className="text-gray-500">মোট: </span>
+                          <span className="text-green-600 font-bold">{formatCurrency(tx.financials.totalBill)}</span>
                         </div>
                       )}
                       {tx.financials.cashPaid > 0 && (
                         <div>
-                          <span className="text-slate-500">Cash received: </span>
-                          <span className="text-blue-400 font-medium">{formatCurrency(tx.financials.cashPaid)}</span>
+                          <span className="text-gray-500">নগদ পেয়েছি: </span>
+                          <span className="text-blue-600 font-bold">{formatCurrency(tx.financials.cashPaid)}</span>
                         </div>
                       )}
                       {tx.financials.amountAddedToKhata > 0 && (
                         <div>
-                          <span className="text-slate-500">On credit: </span>
-                          <span className="text-amber-400 font-medium">{formatCurrency(tx.financials.amountAddedToKhata)}</span>
-                        </div>
-                      )}
-                      {role !== 'MANAGER' && tx.financials.netProfitAmount !== undefined && (
-                        <div>
-                          <span className="text-slate-500">Profit: </span>
-                          <span className="text-violet-400 font-medium">{formatCurrency(tx.financials.netProfitAmount)}</span>
+                          <span className="text-gray-500">বাকিতে: </span>
+                          <span className="text-amber-600 font-bold">{formatCurrency(tx.financials.amountAddedToKhata)}</span>
                         </div>
                       )}
                     </div>

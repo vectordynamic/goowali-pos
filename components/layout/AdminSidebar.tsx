@@ -14,7 +14,8 @@ import {
   Truck,
   ClipboardList,
   Wallet,
-  History
+  History,
+  LayoutDashboard
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -32,6 +33,7 @@ interface Props {
 
 const adminNavItems = [
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
+  { href: '/branch-report', label: 'Branch Report', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/products', label: 'Products', icon: Package, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/customers', label: 'Customers', icon: UserRound, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/regular-orders', label: 'Regular Orders', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },

@@ -59,6 +59,13 @@ export const CustomerCreateSchema = z.object({
   }).default(() => ({ deliveryMethod: 'Pickup' as const, dailyRequirementLiters: 0, fixedProductRates: [] }))
 })
 
+// Used by POS quick-create: phone optional, type defaults to Retail
+export const QuickCustomerCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  phone: bdPhone.optional(),
+  customerType: z.enum(['Retail', 'Paikari']).default('Retail'),
+})
+
 export const CustomerUpdateSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   phone: bdPhone.optional(),

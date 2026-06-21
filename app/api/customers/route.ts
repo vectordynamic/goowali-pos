@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
 import Customer from '@/models/Customer'
-import { validate, CustomerCreateSchema } from '@/lib/validators'
+import { validate, CustomerCreateSchema, QuickCustomerCreateSchema } from '@/lib/validators'
 import type { Role } from '@/types'
 
 // GET /api/customers?type=Retail|Paikari&search=&branchId=&confirm=1&due=1
@@ -42,12 +42,17 @@ export async function GET(req: NextRequest) {
     filter.registeredBranch = { $in: allowed }
   }
 
+  const posLookup = sp.get('pos') === '1'
+
   if (role === 'MANAGER') {
     if (confirm) {
       // Dispatch view: customers with at least one regular order (any type)
       filter['paikariConfig.fixedProductRates.0'] = { $exists: true }
     } else if (dueOnly) {
       // Due page: all branch customers with outstanding dues — no createdBy restriction
+      if (type) filter.customerType = type
+    } else if (posLookup) {
+      // POS search: find any customer in branch by name/phone (for attaching to transactions)
       if (type) filter.customerType = type
     } else {
       // Customer list: only customers this manager created (privacy — hides other customers' contact info)
@@ -87,6 +92,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/customers
 // MANAGER can only create Retail customers; createdBy is always set.
+// ?quick=1 — POS fast-create: phone optional, type defaults to Retail, branch auto-resolved
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -97,7 +103,40 @@ export async function POST(req: NextRequest) {
     id: string
   }
 
+  const quick = req.nextUrl.searchParams.get('quick') === '1'
   const body = await req.json()
+
+  if (quick) {
+    const parsed = validate(QuickCustomerCreateSchema, body)
+    if (!parsed.success) return parsed.response
+
+    const registeredBranch = assignedBranches.length === 1
+      ? assignedBranches[0]
+      : body.registeredBranch ?? assignedBranches[0]
+
+    if (!registeredBranch) {
+      return NextResponse.json({ error: 'Cannot determine branch' }, { status: 400 })
+    }
+
+    await dbConnect()
+
+    if (parsed.data.phone) {
+      const existing = await Customer.findOne({ phone: parsed.data.phone })
+      if (existing) {
+        return NextResponse.json({ error: 'Phone already registered', existing }, { status: 409 })
+      }
+    }
+
+    const customer = await Customer.create({
+      name: parsed.data.name,
+      ...(parsed.data.phone ? { phone: parsed.data.phone } : {}),
+      customerType: parsed.data.customerType,
+      registeredBranch,
+      createdBy: userId,
+    })
+    return NextResponse.json(customer, { status: 201 })
+  }
+
   const parsed = validate(CustomerCreateSchema, body)
   if (!parsed.success) return parsed.response
 

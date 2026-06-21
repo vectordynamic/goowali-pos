@@ -2,9 +2,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import POSHeader from '@/components/layout/POSHeader'
-import DuePage from '@/components/pos/DuePage'
+import StockManager from '@/components/pos/StockManager'
 
-export default async function DuePageRoute({
+export default async function StockPage({
   params
 }: {
   params: Promise<{ branchId: string }>
@@ -16,7 +16,7 @@ export default async function DuePageRoute({
   const { role, assignedBranches, id, name } = session.user
 
   if (role !== 'SUPER_ADMIN' && !assignedBranches.includes(branchId)) {
-    redirect('/')
+    redirect('/login')
   }
 
   return (
@@ -24,10 +24,10 @@ export default async function DuePageRoute({
       <POSHeader branchId={branchId} userId={id} userName={name ?? ''} role={role} />
       <div className="flex-1 p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-black text-gray-800">বাকির তালিকা</h1>
-          <p className="text-gray-500 mt-1">কাস্টমারের কাছ থেকে বাকি আদায় করুন</p>
+          <h1 className="text-2xl font-black text-gray-800">স্টক ম্যানেজমেন্ট</h1>
+          <p className="text-gray-500 mt-1">পণ্য গ্রহণ ও স্টক আপডেট করুন</p>
         </div>
-        <DuePage role={role} assignedBranches={assignedBranches} forceBranchId={branchId} />
+        <StockManager branchId={branchId} />
       </div>
     </div>
   )

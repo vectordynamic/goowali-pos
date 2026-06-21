@@ -40,7 +40,7 @@ const FixedRateSchema = new Schema(
 const CustomerSchema = new Schema<CustomerDocument>(
   {
     name: { type: String, required: true, trim: true },
-    phone: { type: String, required: true, unique: true, trim: true, index: true },
+    phone: { type: String, required: false, unique: true, sparse: true, trim: true },
     location: { type: String, trim: true },
     customerType: {
       type: String,

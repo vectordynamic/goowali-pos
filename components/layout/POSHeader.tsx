@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
-import { ShoppingCart, Truck, FileText, LayoutDashboard, LogOut, UserRound, ClipboardList, Wallet } from 'lucide-react'
+import { ShoppingCart, Truck, FileText, LayoutDashboard, LogOut, UserRound, ClipboardList, Wallet, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
 
@@ -16,24 +16,73 @@ interface Props {
 
 export default function POSHeader({ branchId, userName, role }: Props) {
   const pathname = usePathname()
+  const isManager = role === 'MANAGER'
 
-  // Build tabs based on role:
-  // MANAGER: POS + Customers (Retail only) + Z-Report
-  // BRANCH_ADMIN / SUPER_ADMIN: POS + Customers + Dispatch + Z-Report + Dashboard link
   const tabs = [
-    { href: `/${branchId}/pos`, label: 'POS', icon: ShoppingCart, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
-    { href: `/${branchId}/transactions`, label: 'Sales Log', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
-    { href: `/${branchId}/customers`, label: 'Customers', icon: UserRound, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
+    { href: `/${branchId}/pos`, label: isManager ? 'বিক্রি' : 'POS', icon: ShoppingCart, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
+    { href: `/${branchId}/transactions`, label: isManager ? 'হিসাব' : 'Sales Log', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
+    { href: `/${branchId}/customers`, label: isManager ? 'কাস্টমার' : 'Customers', icon: UserRound, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
+    { href: `/${branchId}/stock`, label: isManager ? 'স্টক' : 'Stock', icon: Package, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
     { href: `/${branchId}/wholesale-dispatch`, label: 'Dispatch', icon: Truck, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
-    { href: `/${branchId}/due`, label: 'Due', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
-    { href: `/${branchId}/z-report`, label: 'Z-Report', icon: FileText, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] }
+    { href: `/${branchId}/due`, label: isManager ? 'বাকি' : 'Due', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
+    { href: `/${branchId}/z-report`, label: isManager ? 'রিপোর্ট' : 'Z-Report', icon: FileText, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] }
   ].filter((t) => t.roles.includes(role))
 
   const roleName =
     role === 'SUPER_ADMIN' ? 'Super Admin' :
-    role === 'BRANCH_ADMIN' ? 'Admin' :
-    'Manager'
+    role === 'BRANCH_ADMIN' ? 'Admin' : 'ম্যানেজার'
 
+  if (isManager) {
+    return (
+      <header className="bg-white border-b-2 border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm">
+        <div className="flex items-center gap-2 mr-2">
+          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center">
+            <ShoppingCart className="w-4 h-4 text-white" />
+          </div>
+          <span className="text-base font-black text-gray-800 hidden sm:block">ShopMS</span>
+        </div>
+
+        <nav className="flex items-center gap-1">
+          {tabs.map((tab) => {
+            const active = pathname === tab.href
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold transition-colors',
+                  active
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+                )}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-3 pl-3 border-l-2 border-gray-200">
+          <div className="text-right hidden sm:block">
+            <p className="text-sm font-bold text-gray-800">{userName}</p>
+            <p className="text-xs text-gray-500">{roleName}</p>
+          </div>
+          <button
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            title="বের হন"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+    )
+  }
+
+  // Admin/Super admin — keep dark theme
   return (
     <header className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center gap-4">
       <div className="flex items-center gap-2 mr-2">
@@ -66,16 +115,13 @@ export default function POSHeader({ branchId, userName, role }: Props) {
 
       <div className="flex-1" />
 
-      {/* Admins get a back-to-dashboard shortcut */}
-      {role !== 'MANAGER' && (
-        <Link
-          href="/analytics"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
-        >
-          <LayoutDashboard className="w-3.5 h-3.5" />
-          Dashboard
-        </Link>
-      )}
+      <Link
+        href="/analytics"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+      >
+        <LayoutDashboard className="w-3.5 h-3.5" />
+        Dashboard
+      </Link>
 
       <div className="flex items-center gap-3 pl-3 border-l border-slate-700">
         <div className="text-right hidden sm:block">

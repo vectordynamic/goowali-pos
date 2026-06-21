@@ -20,12 +20,12 @@ export default async function ZReportPage({
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <POSHeader branchId={branchId} userId={id} userName={name ?? ''} role={role} />
       <div className="flex-1 p-6">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-slate-100">Daily Z-Report</h1>
-          <p className="text-slate-400 text-sm">End-of-day cash & stock reconciliation</p>
+          <h1 className="text-2xl font-black text-gray-800">দৈনিক রিপোর্ট</h1>
+          <p className="text-gray-500 text-sm">End-of-day cash & stock reconciliation</p>
         </div>
         <ZReport branchId={branchId} />
       </div>
