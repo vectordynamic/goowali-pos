@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import {
-  TrendingDown, TrendingUp, Package, Wallet, ShoppingCart,
-  RefreshCw, AlertTriangle, CheckCircle, Clock
+  TrendingDown, TrendingUp, Package,
+  RefreshCw, CheckCircle, Clock, MessageSquare
 } from 'lucide-react'
 import { formatCurrency, today } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -33,13 +33,21 @@ interface PreOrderEntry {
   quantity: number
 }
 
+interface StockReason {
+  productId: string
+  variantId: string
+  reason: string
+}
+
 interface ClosingRecord {
   _id: string
   date: string
   status: string
   mathematicalSystemTotals: SystemTotals
   nightCashCounted: number | null
+  cashCheckReason: string | null
   physicalStock: PhysicalStock[]
+  stockCheckReasons: StockReason[]
   tomorrowPreOrders: PreOrderEntry[]
   discrepancies: { cashShortage: number; stockMismatch: number }
   yesterdayPreOrders?: PreOrderEntry[]
@@ -169,7 +177,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <div className="p-6 space-y-6 w-full">
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center gap-4 justify-between">
         <div>
@@ -289,6 +297,17 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                   )}
                 </div>
               </div>
+
+              {/* Cash reason — shown when manager wrote one */}
+              {closing?.cashCheckReason && (
+                <div className="mt-4 pt-4 border-t border-slate-700 flex items-start gap-2">
+                  <MessageSquare className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-orange-400 font-bold mb-0.5">ম্যানেজারের ব্যাখ্যা</p>
+                    <p className="text-sm text-slate-300">{closing.cashCheckReason}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -303,9 +322,10 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                   <thead>
                     <tr className="border-b border-slate-700 bg-slate-800/60">
                       <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">পণ্য</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">সিস্টেম স্টক</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">রাতের গণনা</th>
+                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">সিস্টেম</th>
+                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">গণনা</th>
                       <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">গ্যাপ</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">কারণ</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -317,6 +337,9 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                           (e) => e.productId === product._id && e.variantId === variant.variantId
                         )
                         const gap = physEntry ? physEntry.physicalQty - physEntry.systemQty : null
+                        const reasonEntry = closing?.stockCheckReasons?.find(
+                          (r) => r.productId === product._id && r.variantId === variant.variantId
+                        )
 
                         return (
                           <tr key={`${product._id}:${variant.variantId}`} className="border-b border-slate-800 hover:bg-slate-800/30">
@@ -331,7 +354,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                               {physEntry ? (
                                 <span className="text-slate-200 font-bold">{physEntry.physicalQty} {u}</span>
                               ) : (
-                                <span className="text-slate-600 text-xs">গণনা হয়নি</span>
+                                <span className="text-slate-600 text-xs">হয়নি</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -339,6 +362,18 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                                 <span className={`font-bold text-sm ${gap === 0 ? 'text-green-400' : gap < 0 ? 'text-red-400' : 'text-amber-400'}`}>
                                   {gap > 0 ? '+' : ''}{gap.toFixed(2)} {u}
                                 </span>
+                              ) : (
+                                <span className="text-slate-700">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              {reasonEntry ? (
+                                <div className="flex items-start gap-1.5">
+                                  <MessageSquare className="w-3.5 h-3.5 text-orange-400 mt-0.5 flex-shrink-0" />
+                                  <span className="text-xs text-slate-300">{reasonEntry.reason}</span>
+                                </div>
+                              ) : gap !== null && Math.abs(gap) > 1 ? (
+                                <span className="text-xs text-slate-600 italic">কারণ দেওয়া হয়নি</span>
                               ) : (
                                 <span className="text-slate-700">—</span>
                               )}
@@ -489,7 +524,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
             ) : (
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[700px]">
+                  <table className="w-full text-sm min-w-[850px]">
                     <thead>
                       <tr className="border-b border-slate-700 bg-slate-800/60">
                         <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">তারিখ</th>
@@ -497,7 +532,8 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                         <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">বাকি আদায়</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">খরচ</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">ক্যাশ গ্যাপ</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">স্টক গ্যাপ (মোট)</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">ক্যাশ কারণ</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">স্টক গ্যাপ</th>
                         <th className="text-center px-4 py-3 text-xs text-slate-400 font-medium">স্ট্যাটাস</th>
                       </tr>
                     </thead>
@@ -536,6 +572,18 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                                 </span>
                               ) : (
                                 <span className="text-slate-600 text-xs">জমা হয়নি</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              {(h as any).cashCheckReason ? (
+                                <div className="flex items-start gap-1">
+                                  <MessageSquare className="w-3 h-3 text-orange-400 mt-0.5 flex-shrink-0" />
+                                  <span className="text-xs text-slate-400 line-clamp-1">{(h as any).cashCheckReason}</span>
+                                </div>
+                              ) : hGap !== null && Math.abs(hGap) > 30 ? (
+                                <span className="text-xs text-slate-600 italic">কারণ নেই</span>
+                              ) : (
+                                <span className="text-slate-700">—</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-right">
