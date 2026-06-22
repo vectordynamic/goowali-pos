@@ -89,7 +89,8 @@ export const CustomerUpdateSchema = z.object({
 export const BranchDetailSchema = z.object({
   branchId: objectId,
   stockLevel: z.number().min(0).default(0),
-  buyingPrice: z.number().min(0)
+  buyingPrice: z.number().min(0),
+  mrpPrice: z.number().min(0).default(0)
 })
 
 export const VariantSchema = z.object({
@@ -104,6 +105,7 @@ export const VariantSchema = z.object({
 })
 
 export const ProductCreateSchema = z.object({
+  productCode: z.string().trim().min(1, 'Product code is required').max(50).toUpperCase(),
   name: z.string().trim().min(1, 'Name is required').max(200),
   category: z.string().trim().max(100).optional(),
   unitType: z.enum(['Liquid', 'Weight', 'Fixed']),
@@ -117,6 +119,7 @@ export const BranchPricingSchema = z.object({
   variantId: z.string().min(1),
   branchId: objectId,
   buyingPrice: z.number().min(0),
+  mrpPrice: z.number().min(0).optional(),
   stockLevel: z.number().min(0).optional()
 })
 
@@ -136,6 +139,7 @@ export const TransactionCreateSchema = z.object({
     'Due Collection', 'Expense', 'Procurement'
   ]),
   items: z.array(TransactionItemSchema).min(1, 'At least one item required'),
+  discount: z.number().min(0).optional(),
   cashPaid: z.number().min(0).optional(),
   notes: z.string().trim().max(500).optional()
 })

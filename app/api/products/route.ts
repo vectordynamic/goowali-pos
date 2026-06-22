@@ -82,6 +82,12 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return parsed.response
 
   await dbConnect()
+
+  const duplicate = await Product.findOne({ productCode: parsed.data.productCode })
+  if (duplicate) {
+    return NextResponse.json({ error: `Product code "${parsed.data.productCode}" already exists` }, { status: 409 })
+  }
+
   const product = await Product.create(parsed.data)
   return NextResponse.json(product, { status: 201 })
 }

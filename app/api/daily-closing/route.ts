@@ -45,6 +45,11 @@ async function computeSystemTotals(branchId: string, date: string, openingCash =
             $cond: [{ $eq: ['$transactionType', 'Expense'] }, '$financials.totalBill', 0],
           },
         },
+        procurementCost: {
+          $sum: {
+            $cond: [{ $eq: ['$transactionType', 'Procurement'] }, '$financials.cashPaid', 0],
+          },
+        },
       },
     },
   ])
@@ -52,9 +57,10 @@ async function computeSystemTotals(branchId: string, date: string, openingCash =
   const cashSales = result?.cashSales ?? 0
   const dueCollections = result?.dueCollections ?? 0
   const expensesLogged = result?.expensesLogged ?? 0
-  const expectedDrawerCash = openingCash + cashSales + dueCollections - expensesLogged
+  const procurementCost = result?.procurementCost ?? 0
+  const expectedDrawerCash = openingCash + cashSales + dueCollections - expensesLogged - procurementCost
 
-  return { openingCash, cashSales, dueCollections, expensesLogged, expectedDrawerCash }
+  return { openingCash, cashSales, dueCollections, expensesLogged, procurementCost, expectedDrawerCash }
 }
 
 // GET /api/daily-closing?branchId=xxx&date=YYYY-MM-DD

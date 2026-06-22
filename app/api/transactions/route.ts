@@ -9,8 +9,10 @@ import {
   assertBranchAccess,
   branchDenied,
   stripSensitiveTransactionData,
-  generateInvoiceId
+  generateInvoiceId,
+  today
 } from '@/lib/utils'
+import { updateDailySummary } from '@/lib/update-daily-summary'
 import { validate, TransactionCreateSchema } from '@/lib/validators'
 import type { Role } from '@/types'
 
@@ -65,14 +67,15 @@ export async function POST(req: NextRequest) {
   const parsed = validate(TransactionCreateSchema, body)
   if (!parsed.success) return parsed.response
 
-  const { branchId, customerId, transactionType, items, cashPaid, notes } = parsed.data
+  const { branchId, customerId, transactionType, items, cashPaid, discount: rawDiscount, notes } = parsed.data
+  const discount = Math.max(0, rawDiscount ?? 0)
 
   if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
 
   await dbConnect()
 
-  let totalBill = 0
-  let netProfitAmount = 0
+  let subtotal = 0
+  let totalCOGS = 0
   const processedItems = []
 
   for (const item of items) {
@@ -100,12 +103,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const lineTotal = item.rateApplied * item.quantity
-    // Profit = selling price minus buying cost per unit
-    const lineProfit = (item.rateApplied - branchDetail.buyingPrice) * item.quantity
-
-    totalBill += lineTotal
-    netProfitAmount += lineProfit
+    // rateApplied = mrpPrice (locked; manager cannot override)
+    const mrp = branchDetail.mrpPrice > 0 ? branchDetail.mrpPrice : item.rateApplied
+    subtotal += mrp * item.quantity
+    totalCOGS += branchDetail.buyingPrice * item.quantity
 
     branchDetail.stockLevel -= item.quantity
     await product.save()
@@ -114,11 +115,14 @@ export async function POST(req: NextRequest) {
       productId: item.productId,
       variantId: item.variantId,
       quantity: item.quantity,
-      rateApplied: item.rateApplied,
+      rateApplied: mrp,
       isCustomOverride: false
     })
   }
 
+  // Discount applied at sale level; profit = final bill - COGS
+  const totalBill = Math.max(0, subtotal - discount)
+  const netProfitAmount = totalBill - totalCOGS
   const amountAddedToKhata = Math.max(0, totalBill - (cashPaid ?? 0))
 
   if (customerId && amountAddedToKhata > 0) {
@@ -136,12 +140,16 @@ export async function POST(req: NextRequest) {
     items: processedItems,
     financials: {
       totalBill,
+      discount,
       cashPaid: cashPaid ?? totalBill,
       amountAddedToKhata,
       netProfitAmount
     },
     notes
   })
+
+  // Update pre-computed daily summary (non-blocking)
+  updateDailySummary(branchId, today()).catch(() => {})
 
   const result = transaction.toObject()
   if (role === 'MANAGER') {

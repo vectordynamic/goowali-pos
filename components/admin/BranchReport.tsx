@@ -16,6 +16,7 @@ interface SystemTotals {
   cashSales: number
   dueCollections: number
   expensesLogged: number
+  procurementCost: number
   expectedDrawerCash: number
 }
 
@@ -68,6 +69,7 @@ interface Props {
   role: Role
   branches: Branch[]
   assignedBranches: string[]
+  defaultBranchId?: string
 }
 
 function StatCard({ label, value, sub, color = 'gray' }: {
@@ -93,8 +95,8 @@ function StatCard({ label, value, sub, color = 'gray' }: {
   )
 }
 
-export default function BranchReport({ role, branches, assignedBranches }: Props) {
-  const defaultBranch = branches[0]?._id ?? ''
+export default function BranchReport({ role, branches, assignedBranches, defaultBranchId }: Props) {
+  const defaultBranch = defaultBranchId ?? branches[0]?._id ?? ''
   const [branchId, setBranchId] = useState(defaultBranch)
   const [date, setDate] = useState(today())
   const [loading, setLoading] = useState(true)
@@ -135,7 +137,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
         .reduce((s: number, t: any) => s + (t.financials?.amountAddedToKhata ?? 0), 0)
       setCreditGiven(totalCredit)
     } catch {
-      toast.error('ডেটা লোড হয়নি')
+      toast.error('Failed to load data')
     } finally {
       setLoading(false)
     }
@@ -154,7 +156,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
 
   const st = closing?.mathematicalSystemTotals
   const nightCash = closing?.nightCashCounted ?? null
-  const cashGap = nightCash !== null && st ? nightCash - st.expectedDrawerCash : null
+  const cashGap = nightCash != null && st ? nightCash - st.expectedDrawerCash : null
   const cashGapAbs = cashGap !== null ? Math.abs(cashGap) : null
   const isShort = cashGap !== null && cashGap < 0
   const isBalanced = cashGap !== null && cashGap === 0
@@ -173,7 +175,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
   const totalStockGap = (closing?.physicalStock ?? []).reduce((s, e) => s + (e.physicalQty - e.systemQty), 0)
 
   if (!branches.length) {
-    return <div className="p-8 text-slate-400">কোনো শাখা নেই।</div>
+    return <div className="p-8 text-slate-400">No branches found.</div>
   }
 
   return (
@@ -181,11 +183,13 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center gap-4 justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-100">Branch Report</h1>
+          <h1 className="text-2xl font-black text-slate-100">
+            {role === 'BRANCH_ADMIN' ? 'Daily Report' : 'Branch Report'}
+          </h1>
           <p className="text-sm text-slate-400">Daily summary — sales, cash gap, stock & dues</p>
         </div>
         <div className="flex items-center gap-3">
-          {(role === 'SUPER_ADMIN' || branches.length > 1) && (
+          {role === 'SUPER_ADMIN' && (
             <select
               value={branchId}
               onChange={(e) => setBranchId(e.target.value)}
@@ -215,32 +219,32 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
       </div>
 
       {loading ? (
-        <div className="text-center py-20 text-slate-400">লোড হচ্ছে...</div>
+        <div className="text-center py-20 text-slate-400">Loading…</div>
       ) : (
         <>
           {/* ── Section 1: Today's Sales ── */}
           <section>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">
-              {isToday ? "আজকের বিক্রি" : `${date} — বিক্রির হিসাব`}
+              {isToday ? "Today's Sales" : `${date} — Sales`}
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <StatCard
-                label="নগদ বিক্রি"
+                label="Cash Sales"
                 value={formatCurrency(st?.cashSales ?? 0)}
                 color="green"
               />
               <StatCard
-                label="বাকিতে দিলাম (খাতায়)"
+                label="Credit Given (Khata)"
                 value={formatCurrency(creditGiven)}
                 color="amber"
               />
               <StatCard
-                label="বাকি আদায়"
+                label="Due Collected"
                 value={formatCurrency(st?.dueCollections ?? 0)}
                 color="blue"
               />
               <StatCard
-                label="খরচ"
+                label="Expenses"
                 value={formatCurrency(st?.expensesLogged ?? 0)}
                 color="red"
               />
@@ -249,31 +253,69 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
 
           {/* ── Section 2: Cash Gap ── */}
           <section>
-            <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">ক্যাশ চেক</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">Cash Check</p>
             <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-5">
+              {/* Cash breakdown chips */}
+              <div className="flex flex-wrap items-center gap-2 mb-5 text-sm">
+                <div className="flex flex-col items-center bg-slate-700/40 rounded-lg px-3 py-2 min-w-[80px]">
+                  <span className="text-xs text-slate-500 mb-0.5">Opening</span>
+                  <span className="font-bold text-slate-200">{formatCurrency(st?.openingCash ?? 0)}</span>
+                </div>
+                <span className="text-slate-500 font-bold">+</span>
+                <div className="flex flex-col items-center bg-green-900/30 rounded-lg px-3 py-2 min-w-[80px]">
+                  <span className="text-xs text-green-500 mb-0.5">Cash Sales</span>
+                  <span className="font-bold text-green-400">{formatCurrency(st?.cashSales ?? 0)}</span>
+                </div>
+                <span className="text-slate-500 font-bold">+</span>
+                <div className="flex flex-col items-center bg-blue-900/30 rounded-lg px-3 py-2 min-w-[80px]">
+                  <span className="text-xs text-blue-500 mb-0.5">Collections</span>
+                  <span className="font-bold text-blue-400">{formatCurrency(st?.dueCollections ?? 0)}</span>
+                </div>
+                {(st?.expensesLogged ?? 0) > 0 && (
+                  <>
+                    <span className="text-slate-500 font-bold">−</span>
+                    <div className="flex flex-col items-center bg-red-900/30 rounded-lg px-3 py-2 min-w-[80px]">
+                      <span className="text-xs text-red-500 mb-0.5">Expenses</span>
+                      <span className="font-bold text-red-400">{formatCurrency(st?.expensesLogged ?? 0)}</span>
+                    </div>
+                  </>
+                )}
+                {(st?.procurementCost ?? 0) > 0 && (
+                  <>
+                    <span className="text-slate-500 font-bold">−</span>
+                    <div className="flex flex-col items-center bg-amber-900/30 rounded-lg px-3 py-2 min-w-[80px]">
+                      <span className="text-xs text-amber-500 mb-0.5">Stock Bought</span>
+                      <span className="font-bold text-amber-400">{formatCurrency(st?.procurementCost ?? 0)}</span>
+                    </div>
+                  </>
+                )}
+                <span className="text-slate-500 font-bold">=</span>
+                <div className="flex flex-col items-center bg-slate-600/40 rounded-lg px-3 py-2 min-w-[80px] ring-1 ring-slate-500">
+                  <span className="text-xs text-slate-400 mb-0.5">Expected</span>
+                  <span className="font-black text-slate-100">{formatCurrency(st?.expectedDrawerCash ?? 0)}</span>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center">
-                  <p className="text-xs text-slate-400 mb-1">সিস্টেমে থাকার কথা</p>
+                  <p className="text-xs text-slate-400 mb-1">Expected in Drawer</p>
                   <p className="text-2xl font-black text-slate-100">{formatCurrency(st?.expectedDrawerCash ?? 0)}</p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    ওপেনিং {formatCurrency(st?.openingCash ?? 0)} + বিক্রি {formatCurrency(st?.cashSales ?? 0)} + আদায় {formatCurrency(st?.dueCollections ?? 0)} − খরচ {formatCurrency(st?.expensesLogged ?? 0)}
-                  </p>
                 </div>
 
                 <div className="text-center">
-                  <p className="text-xs text-slate-400 mb-1">ম্যানেজার রাতে গুনেছে</p>
+                  <p className="text-xs text-slate-400 mb-1">Manager Night Count</p>
                   {nightCash !== null ? (
                     <p className="text-2xl font-black text-slate-100">{formatCurrency(nightCash)}</p>
                   ) : (
                     <div className="flex items-center justify-center gap-2 mt-2">
                       <Clock className="w-4 h-4 text-slate-500" />
-                      <span className="text-sm text-slate-500">এখনো জমা দেয়নি</span>
+                      <span className="text-sm text-slate-500">Not submitted yet</span>
                     </div>
                   )}
                 </div>
 
                 <div className="text-center">
-                  <p className="text-xs text-slate-400 mb-1">গ্যাপ</p>
+                  <p className="text-xs text-slate-400 mb-1">Gap</p>
                   {cashGap !== null ? (
                     <>
                       <div className={`flex items-center justify-center gap-2 ${isBalanced ? 'text-green-400' : isShort ? 'text-red-400' : 'text-amber-400'}`}>
@@ -285,11 +327,11 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                           <TrendingUp className="w-5 h-5" />
                         )}
                         <span className="text-2xl font-black">
-                          {isBalanced ? 'মিলেছে' : `${isShort ? '−' : '+'}${formatCurrency(cashGapAbs!)}`}
+                          {isBalanced ? 'Balanced' : `${isShort ? '−' : '+'}${formatCurrency(cashGapAbs!)}`}
                         </span>
                       </div>
                       <p className={`text-xs mt-1 ${isBalanced ? 'text-green-500' : isShort ? 'text-red-500' : 'text-amber-500'}`}>
-                        {isBalanced ? 'সব ঠিক আছে' : isShort ? 'টাকা কম পাওয়া গেছে' : 'টাকা বেশি পাওয়া গেছে'}
+                        {isBalanced ? 'All balanced' : isShort ? 'Cash short' : 'Cash over'}
                       </p>
                     </>
                   ) : (
@@ -303,7 +345,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                 <div className="mt-4 pt-4 border-t border-slate-700 flex items-start gap-2">
                   <MessageSquare className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-xs text-orange-400 font-bold mb-0.5">ম্যানেজারের ব্যাখ্যা</p>
+                    <p className="text-xs text-orange-400 font-bold mb-0.5">Manager's Note</p>
                     <p className="text-sm text-slate-300">{closing.cashCheckReason}</p>
                   </div>
                 </div>
@@ -313,19 +355,19 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
 
           {/* ── Section 3: Stock Status ── */}
           <section>
-            <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">স্টক স্ট্যাটাস</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">Stock Status</p>
             <div className="rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
               {products.length === 0 ? (
-                <p className="p-5 text-slate-500">কোনো পণ্য নেই</p>
+                <p className="p-5 text-slate-500">No products</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-700 bg-slate-800/60">
-                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">পণ্য</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">সিস্টেম</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">গণনা</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">গ্যাপ</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">কারণ</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Product</th>
+                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">System</th>
+                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Counted</th>
+                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Gap</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -354,7 +396,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                               {physEntry ? (
                                 <span className="text-slate-200 font-bold">{physEntry.physicalQty} {u}</span>
                               ) : (
-                                <span className="text-slate-600 text-xs">হয়নি</span>
+                                <span className="text-slate-600 text-xs">—</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -373,7 +415,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                                   <span className="text-xs text-slate-300">{reasonEntry.reason}</span>
                                 </div>
                               ) : gap !== null && Math.abs(gap) > 1 ? (
-                                <span className="text-xs text-slate-600 italic">কারণ দেওয়া হয়নি</span>
+                                <span className="text-xs text-slate-600 italic">No reason given</span>
                               ) : (
                                 <span className="text-slate-700">—</span>
                               )}
@@ -394,13 +436,13 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
             {/* Today's supplier orders (from yesterday) */}
             <section>
               <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">
-                আজকের সাপ্লায়ার অর্ডার (গতকাল দেওয়া)
+                Today's Supplier Orders (placed yesterday)
               </p>
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
                 {supplierOrders.length === 0 ? (
                   <div className="flex items-center gap-2 text-slate-500 text-sm py-2">
                     <Package className="w-4 h-4" />
-                    গতকাল কোনো অর্ডার দেওয়া হয়নি
+                    No orders placed yesterday
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -412,11 +454,11 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                         <div key={i} className="flex items-center justify-between">
                           <div>
                             <p className="text-slate-200 font-bold text-sm">{o.productName}</p>
-                            <p className="text-slate-500 text-xs">অর্ডার করা ছিল: {o.quantity} L</p>
+                            <p className="text-slate-500 text-xs">Ordered: {o.quantity} L</p>
                           </div>
                           {received !== null && (
                             <div className="text-right">
-                              <p className="text-slate-300 font-bold text-sm">এখন স্টকে: {received} L</p>
+                              <p className="text-slate-300 font-bold text-sm">Current stock: {received} L</p>
                             </div>
                           )}
                         </div>
@@ -430,13 +472,13 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
             {/* Tomorrow's supplier orders */}
             <section>
               <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">
-                কালকের সাপ্লায়ার অর্ডার (আজ দেওয়া)
+                Tomorrow's Supplier Orders (placed today)
               </p>
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
                 {tomorrowOrders.length === 0 ? (
                   <div className="flex items-center gap-2 text-slate-500 text-sm py-2">
                     <Clock className="w-4 h-4" />
-                    ম্যানেজার এখনো অর্ডার দেয়নি
+                    Manager has not placed orders yet
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -447,7 +489,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                       </div>
                     ))}
                     <div className="pt-2 border-t border-slate-700 flex justify-between">
-                      <span className="text-slate-400 text-sm">মোট</span>
+                      <span className="text-slate-400 text-sm">Total</span>
                       <span className="text-blue-400 font-black">
                         {tomorrowOrders.reduce((s, o) => s + o.quantity, 0)} L
                       </span>
@@ -461,10 +503,10 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
           {/* ── Section 5: Due Summary ── */}
           <section>
             <div className="flex items-center gap-3 mb-3">
-              <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">বাকির হিসাব</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Outstanding Dues</p>
               {totalDue > 0 && (
                 <span className="bg-red-900/40 border border-red-800/40 text-red-400 text-xs font-bold px-2 py-0.5 rounded-full">
-                  মোট {formatCurrency(totalDue)}
+                  Total {formatCurrency(totalDue)}
                 </span>
               )}
             </div>
@@ -472,16 +514,16 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
             {customers.length === 0 ? (
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-5 flex items-center gap-2 text-green-400">
                 <CheckCircle className="w-5 h-5" />
-                <span className="font-bold">কোনো বাকি নেই — সব পরিষ্কার!</span>
+                <span className="font-bold">No outstanding dues — all clear!</span>
               </div>
             ) : (
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-700 bg-slate-800/60">
-                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">কাস্টমার</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">ফোন</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">বাকি</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Customer</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Phone</th>
+                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Due</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -499,10 +541,10 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                     {customers.length > 5 && (
                       <tr className="border-t border-slate-700">
                         <td colSpan={2} className="px-4 py-2 text-slate-500 text-xs">
-                          আরও {customers.length - 5} জনের বাকি আছে
+                          +{customers.length - 5} more customers with outstanding dues
                         </td>
                         <td className="px-4 py-2 text-right text-slate-400 font-bold text-sm">
-                          মোট {formatCurrency(totalDue)}
+                          Total {formatCurrency(totalDue)}
                         </td>
                       </tr>
                     )}
@@ -515,11 +557,11 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
           {/* ── Section 6: 7-Day History ── */}
           <section>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">
-              সর্বশেষ {history.length} দিনের ইতিহাস
+              Last {history.length} Days History
             </p>
             {history.length === 0 ? (
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-5 text-slate-500 text-sm">
-                কোনো পূর্ববর্তী তথ্য নেই
+                No history available
               </div>
             ) : (
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
@@ -527,21 +569,21 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                   <table className="w-full text-sm min-w-[850px]">
                     <thead>
                       <tr className="border-b border-slate-700 bg-slate-800/60">
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">তারিখ</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">নগদ বিক্রি</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">বাকি আদায়</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">খরচ</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">ক্যাশ গ্যাপ</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">ক্যাশ কারণ</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">স্টক গ্যাপ</th>
-                        <th className="text-center px-4 py-3 text-xs text-slate-400 font-medium">স্ট্যাটাস</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Date</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Cash Sales</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Due Collected</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Expenses</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Cash Gap</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Cash Note</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Stock Gap</th>
+                        <th className="text-center px-4 py-3 text-xs text-slate-400 font-medium">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {history.map((h) => {
                         const hSt = h.mathematicalSystemTotals
                         const hNight = h.nightCashCounted
-                        const hGap = hNight !== null ? hNight - hSt.expectedDrawerCash : null
+                        const hGap = hNight != null ? hNight - hSt.expectedDrawerCash : null
                         const hStockGap = (h.physicalStock ?? []).reduce(
                           (s, e) => s + (e.physicalQty - e.systemQty), 0
                         )
@@ -553,7 +595,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                             <td className="px-4 py-3 text-slate-300 font-medium">
                               {h.date}
                               {h.date === today() && (
-                                <span className="ml-2 text-xs bg-blue-900/40 text-blue-400 border border-blue-800/40 px-1.5 py-0.5 rounded">আজ</span>
+                                <span className="ml-2 text-xs bg-blue-900/40 text-blue-400 border border-blue-800/40 px-1.5 py-0.5 rounded">Today</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-right text-green-400 font-bold">
@@ -568,10 +610,10 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                             <td className="px-4 py-3 text-right">
                               {hGap !== null ? (
                                 <span className={`font-black ${hGap === 0 ? 'text-green-400' : hGap < 0 ? 'text-red-400' : 'text-amber-400'}`}>
-                                  {hGap === 0 ? 'মিলেছে' : `${hGap < 0 ? '−' : '+'}${formatCurrency(Math.abs(hGap))}`}
+                                  {hGap === 0 ? 'Balanced' : `${hGap < 0 ? '−' : '+'}${formatCurrency(Math.abs(hGap))}`}
                                 </span>
                               ) : (
-                                <span className="text-slate-600 text-xs">জমা হয়নি</span>
+                                <span className="text-slate-600 text-xs">Not submitted</span>
                               )}
                             </td>
                             <td className="px-4 py-3">
@@ -581,7 +623,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                                   <span className="text-xs text-slate-400 line-clamp-1">{(h as any).cashCheckReason}</span>
                                 </div>
                               ) : hGap !== null && Math.abs(hGap) > 30 ? (
-                                <span className="text-xs text-slate-600 italic">কারণ নেই</span>
+                                <span className="text-xs text-slate-600 italic">No note</span>
                               ) : (
                                 <span className="text-slate-700">—</span>
                               )}
@@ -592,7 +634,7 @@ export default function BranchReport({ role, branches, assignedBranches }: Props
                                   {hStockGap > 0 ? '+' : ''}{hStockGap.toFixed(2)}
                                 </span>
                               ) : (
-                                <span className="text-slate-600 text-xs">গণনা হয়নি</span>
+                                <span className="text-slate-600 text-xs">Not counted</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-center">

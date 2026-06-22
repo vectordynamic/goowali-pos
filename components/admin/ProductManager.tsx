@@ -10,6 +10,7 @@ interface BranchDetail {
   branchId: string
   stockLevel: number
   buyingPrice: number
+  mrpPrice: number
 }
 
 interface Variant {
@@ -20,6 +21,7 @@ interface Variant {
 
 interface Product {
   _id: string
+  productCode: string
   name: string
   category?: string
   unitType: string
@@ -128,7 +130,12 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                   <Package className="w-3.5 h-3.5 text-slate-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-100">{product.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-slate-100">{product.name}</p>
+                    <span className="text-xs font-mono bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded flex-shrink-0">
+                      {product.productCode}
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-500">
                     {product.unitType}
                     {product.isOpenLoose && ' · Loose'}
@@ -197,6 +204,7 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                                 <th className="text-left py-1 font-medium">Branch</th>
                                 <th className="text-right py-1 font-medium">Stock</th>
                                 <th className="text-right py-1 font-medium">Buy ৳</th>
+                                <th className="text-right py-1 font-medium">MRP ৳</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -205,6 +213,7 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                                   <td className="py-1 text-slate-300">{branchName(String(bd.branchId))}</td>
                                   <td className="py-1 text-right text-slate-300">{bd.stockLevel}</td>
                                   <td className="py-1 text-right text-rose-400">৳{bd.buyingPrice}</td>
+                                  <td className="py-1 text-right text-emerald-400">৳{bd.mrpPrice ?? 0}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -264,6 +273,7 @@ function ProductModal({ product, onClose, onSave }: {
   onClose: () => void
   onSave: () => void
 }) {
+  const [productCode, setProductCode] = useState(product?.productCode ?? '')
   const [name, setName] = useState(product?.name ?? '')
   const [category, setCategory] = useState(product?.category ?? '')
   const [unitType, setUnitType] = useState(product?.unitType ?? 'Fixed')
@@ -274,7 +284,7 @@ function ProductModal({ product, onClose, onSave }: {
     e.preventDefault()
     setSubmitting(true)
 
-    const payload = { name, category, unitType, isOpenLoose }
+    const payload = { productCode: productCode.trim().toUpperCase(), name, category, unitType, isOpenLoose }
     const res = product
       ? await fetch(`/api/products/${product._id}`, {
           method: 'PATCH',
@@ -309,6 +319,20 @@ function ProductModal({ product, onClose, onSave }: {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="text-xs text-slate-400 block mb-1.5">Product Code * <span className="text-slate-600">(unique, e.g. MILK-1L)</span></label>
+            <input
+              className="input-base font-mono uppercase"
+              value={productCode}
+              onChange={(e) => setProductCode(e.target.value.toUpperCase())}
+              required
+              placeholder="e.g. MILK-1L"
+              disabled={!!product}
+            />
+            {!!product && (
+              <p className="text-xs text-slate-600 mt-1">Product code cannot be changed after creation</p>
+            )}
+          </div>
           <div>
             <label className="text-xs text-slate-400 block mb-1.5">Name *</label>
             <input
@@ -436,6 +460,7 @@ function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
 }) {
   const [branchId, setBranchId] = useState(branches[0]?._id ?? '')
   const [buyingPrice, setBuyingPrice] = useState('')
+  const [mrpPrice, setMrpPrice] = useState('')
   const [stockLevel, setStockLevel] = useState('0')
   const [submitting, setSubmitting] = useState(false)
 
@@ -450,6 +475,7 @@ function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
         variantId,
         branchId,
         buyingPrice: Number(buyingPrice),
+        mrpPrice: mrpPrice ? Number(mrpPrice) : undefined,
         stockLevel: Number(stockLevel)
       })
     })
@@ -507,15 +533,27 @@ function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1.5">Stock Level</label>
+              <label className="text-xs text-slate-400 block mb-1.5">MRP / Selling Price ৳ *</label>
               <input
                 type="number"
                 className="input-base"
-                value={stockLevel}
-                onChange={(e) => setStockLevel(e.target.value)}
+                value={mrpPrice}
+                onChange={(e) => setMrpPrice(e.target.value)}
+                required
                 min="0"
+                placeholder="0"
               />
             </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 block mb-1.5">Stock Level</label>
+            <input
+              type="number"
+              className="input-base"
+              value={stockLevel}
+              onChange={(e) => setStockLevel(e.target.value)}
+              min="0"
+            />
           </div>
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>

@@ -18,6 +18,7 @@ export interface TransactionDocument extends Document {
   items: TransactionItemDocument[]
   financials: {
     totalBill: number
+    discount: number
     cashPaid: number
     amountAddedToKhata: number
     netProfitAmount: number
@@ -66,6 +67,7 @@ const TransactionSchema = new Schema<TransactionDocument>(
     financials: {
       totalBill: { type: Number, default: 0 },
       cashPaid: { type: Number, default: 0 },
+      discount: { type: Number, default: 0 },
       amountAddedToKhata: { type: Number, default: 0 },
       netProfitAmount: { type: Number, required: true }
     },

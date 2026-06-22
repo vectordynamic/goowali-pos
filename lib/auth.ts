@@ -14,27 +14,50 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' }
       },
       async authorize(credentials) {
-        if (!credentials?.phone || !credentials?.password) return null
+        try {
+          if (!credentials?.phone || !credentials?.password) {
+            console.log('[auth] missing credentials')
+            return null
+          }
 
-        await dbConnect()
-        const { default: User } = await import('@/models/User')
+          await dbConnect()
+          const { default: User } = await import('@/models/User')
 
-        const user = await User.findOne({
-          phone: credentials.phone,
-          isActive: true
-        }).lean() as any
+          const user = await User.findOne({
+            phone: credentials.phone,
+            isActive: true
+          }).lean() as any
 
-        if (!user) return null
+          if (!user) {
+            console.log('[auth] user not found:', credentials.phone)
+            return null
+          }
 
-        const isValid = await bcrypt.compare(credentials.password, user.passwordHash)
-        if (!isValid) return null
+          const isValid = await bcrypt.compare(credentials.password, user.passwordHash)
+          if (!isValid) {
+            console.log('[auth] password mismatch for:', credentials.phone)
+            return null
+          }
 
-        return {
-          id: user._id.toString(),
-          name: user.name,
-          phone: user.phone,
-          role: user.role,
-          assignedBranches: (user.assignedBranches as any[]).map((b) => b.toString())
+          console.log('[auth] login OK:', credentials.phone, user.role)
+
+          let assignedBranches: string[] = (user.assignedBranches as any[]).map((b) => b.toString())
+          if (user.role === 'SUPER_ADMIN') {
+            const { default: Branch } = await import('@/models/Branch')
+            const branches = await Branch.find({ isActive: true }).select('_id').lean() as any[]
+            assignedBranches = branches.map((b: any) => b._id.toString())
+          }
+
+          return {
+            id: user._id.toString(),
+            name: user.name,
+            phone: user.phone,
+            role: user.role,
+            assignedBranches,
+          }
+        } catch (err) {
+          console.error('[auth] authorize error:', err)
+          return null
         }
       }
     })

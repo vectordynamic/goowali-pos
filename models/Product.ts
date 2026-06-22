@@ -5,6 +5,7 @@ export interface BranchDetailDocument {
   branchId: Types.ObjectId
   stockLevel: number
   buyingPrice: number
+  mrpPrice: number
 }
 
 export interface VariantDocument {
@@ -14,6 +15,7 @@ export interface VariantDocument {
 }
 
 export interface ProductDocument extends Document {
+  productCode: string
   name: string
   category?: string
   unitType: UnitType
@@ -27,7 +29,8 @@ const BranchDetailSchema = new Schema<BranchDetailDocument>(
   {
     branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true },
     stockLevel: { type: Number, default: 0 },
-    buyingPrice: { type: Number, required: true }
+    buyingPrice: { type: Number, required: true },
+    mrpPrice: { type: Number, default: 0 }
   },
   { _id: false }
 )
@@ -43,6 +46,7 @@ const VariantSchema = new Schema<VariantDocument>(
 
 const ProductSchema = new Schema<ProductDocument>(
   {
+    productCode: { type: String, required: true, trim: true, uppercase: true },
     name: { type: String, required: true, trim: true },
     category: { type: String, trim: true },
     unitType: {
@@ -56,6 +60,7 @@ const ProductSchema = new Schema<ProductDocument>(
   { timestamps: true }
 )
 
+ProductSchema.index({ productCode: 1 }, { unique: true })
 ProductSchema.index({ name: 1 })
 ProductSchema.index({ 'variants.branchDetails.branchId': 1 })
 

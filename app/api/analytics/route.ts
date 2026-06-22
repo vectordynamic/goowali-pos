@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
+import DailySummary from '@/models/DailySummary'
 import Transaction from '@/models/Transaction'
 import Customer from '@/models/Customer'
 import Branch from '@/models/Branch'
@@ -14,10 +15,7 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { role, assignedBranches } = session.user as { role: Role; assignedBranches: string[] }
-
-  if (role === 'MANAGER') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  if (role === 'MANAGER') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const params = req.nextUrl.searchParams
   const from = params.get('from')
@@ -26,137 +24,193 @@ export async function GET(req: NextRequest) {
 
   await dbConnect()
 
-  // Build allowed branch list — BRANCH_ADMIN never leaks other branch IDs
-  let allowedBranches: string[]
+  // Build branch filter
+  let allowedBranches: mongoose.Types.ObjectId[]
   if (role === 'SUPER_ADMIN') {
-    allowedBranches = branchId ? [branchId] : []  // empty = all
+    if (branchId) {
+      allowedBranches = [new mongoose.Types.ObjectId(branchId)]
+    } else {
+      const all = await Branch.find({}).select('_id').lean() as any[]
+      allowedBranches = all.map((b: any) => new mongoose.Types.ObjectId(b._id))
+    }
   } else {
-    allowedBranches = branchId && assignedBranches.includes(branchId)
+    const ids = branchId && assignedBranches.includes(branchId)
       ? [branchId]
       : assignedBranches
+    allowedBranches = ids.map((b) => new mongoose.Types.ObjectId(b))
   }
 
-  const matchStage: Record<string, unknown> = {}
-  if (allowedBranches.length > 0) {
-    matchStage.branchId = {
-      $in: allowedBranches.map((b) => new mongoose.Types.ObjectId(b))
-    }
+  const matchStage: Record<string, unknown> = {
+    branchId: { $in: allowedBranches }
   }
+  if (from) matchStage.date = { $gte: from }
+  if (to) matchStage.date = { ...(matchStage.date as object ?? {}), $lte: to }
 
-  if (from || to) {
-    matchStage.createdAt = {}
-    if (from) (matchStage.createdAt as any).$gte = new Date(from)
-    if (to) {
-      const toDate = new Date(to)
-      toDate.setDate(toDate.getDate() + 1)
-      ;(matchStage.createdAt as any).$lt = toDate
-    }
-  }
-
-  // Total summary
-  const [summary] = await Transaction.aggregate([
+  // ── Fast aggregate from pre-computed DailySummary ──
+  const [summary] = await DailySummary.aggregate([
     { $match: matchStage },
     {
       $group: {
         _id: null,
-        totalRevenue: { $sum: '$financials.totalBill' },
-        totalCashCollected: { $sum: '$financials.cashPaid' },
-        totalNetProfit: { $sum: '$financials.netProfitAmount' },
-        totalKhataAdded: { $sum: '$financials.amountAddedToKhata' },
-        txCount: { $sum: 1 }
+        salesRevenue: { $sum: '$salesRevenue' },
+        cogs: { $sum: '$cogs' },
+        grossProfit: { $sum: '$grossProfit' },
+        procurementCost: { $sum: '$procurementCost' },
+        expenses: { $sum: '$expenses' },
+        netProfit: { $sum: '$netProfit' },
+        cashIn: { $sum: '$cashIn' },
+        cashOut: { $sum: '$cashOut' },
+        khataAdded: { $sum: '$khataAdded' },
+        khataCollected: { $sum: '$khataCollected' },
+        salesCount: { $sum: '$salesCount' },
+        procurementCount: { $sum: '$procurementCount' },
+        txCount: { $sum: '$txCount' },
+        liquidSold: { $sum: '$liquidSold' },
+        weightSold: { $sum: '$weightSold' },
+        liquidProcured: { $sum: '$liquidProcured' },
+        weightProcured: { $sum: '$weightProcured' },
       }
     }
   ])
 
-  // Daily trend
-  const trend = await Transaction.aggregate([
+  // ── Daily trend from DailySummary ──
+  const trend = await DailySummary.aggregate([
     { $match: matchStage },
     {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-        revenue: { $sum: '$financials.totalBill' },
-        profit: { $sum: '$financials.netProfitAmount' },
-        count: { $sum: 1 }
+      $project: {
+        date: 1,
+        salesRevenue: 1,
+        cogs: 1,
+        grossProfit: 1,
+        netProfit: 1,
+        expenses: 1,
+        procurementCost: 1,
+        cashIn: 1,
       }
     },
-    { $sort: { _id: 1 } },
+    { $sort: { date: 1 } },
     { $limit: 30 }
   ])
 
-  // By transaction type
-  const byType = await Transaction.aggregate([
-    { $match: matchStage },
-    {
-      $group: {
-        _id: '$transactionType',
-        total: { $sum: '$financials.totalBill' },
-        count: { $sum: 1 }
-      }
-    }
-  ])
-
-  // Per-branch breakdown — only includes branches the caller is allowed to see
-  const byBranch = await Transaction.aggregate([
+  // ── Per-branch breakdown ──
+  const byBranchRaw = await DailySummary.aggregate([
     { $match: matchStage },
     {
       $group: {
         _id: '$branchId',
-        revenue: { $sum: '$financials.totalBill' },
-        profit: { $sum: '$financials.netProfitAmount' },
-        txCount: { $sum: 1 }
+        salesRevenue: { $sum: '$salesRevenue' },
+        grossProfit: { $sum: '$grossProfit' },
+        netProfit: { $sum: '$netProfit' },
+        procurementCost: { $sum: '$procurementCost' },
+        txCount: { $sum: '$txCount' },
       }
     }
   ])
 
-  // Enrich byBranch with branch names
-  const branchIds = byBranch.map((b) => b._id)
-  const branches = await Branch.find({ _id: { $in: branchIds } }).select('name').lean()
+  const branchIds = byBranchRaw.map((b) => b._id)
+  const branches = await Branch.find({ _id: { $in: branchIds } }).select('name').lean() as any[]
   const branchMap = Object.fromEntries(branches.map((b: any) => [b._id.toString(), b.name]))
 
-  const byBranchNamed = byBranch.map((b) => ({
+  const byBranch = byBranchRaw.map((b) => ({
     branchId: b._id.toString(),
     branchName: branchMap[b._id.toString()] ?? 'Unknown',
-    revenue: b.revenue,
-    profit: b.profit,
-    txCount: b.txCount
+    salesRevenue: b.salesRevenue,
+    grossProfit: b.grossProfit,
+    netProfit: b.netProfit,
+    procurementCost: b.procurementCost,
+    txCount: b.txCount,
   }))
 
-  // Custom override audit
-  const overrides = await Transaction.find({
-    ...matchStage,
-    'items.isCustomOverride': true
-  })
-    .populate('recordedBy', 'name')
-    .populate('customerId', 'name phone')
-    .select('invoiceId branchId recordedBy customerId items financials createdAt')
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean()
+  // ── Product-wise breakdown — from transactions directly (acceptable for admin) ──
+  const txMatchStage: Record<string, unknown> = {
+    branchId: { $in: allowedBranches },
+    transactionType: { $in: ['Cash Sale', 'Credit Sale', 'Partial Payment'] },
+  }
+  if (from || to) {
+    txMatchStage.createdAt = {}
+    if (from) (txMatchStage.createdAt as any).$gte = new Date(from)
+    if (to) {
+      const toDate = new Date(to); toDate.setDate(toDate.getDate() + 1)
+      ;(txMatchStage.createdAt as any).$lt = toDate
+    }
+  }
 
-  // Total outstanding khata — scoped to visible branches
+  const byProduct = await Transaction.aggregate([
+    { $match: txMatchStage },
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: { productId: '$items.productId', variantId: '$items.variantId' },
+        qtySold: { $sum: '$items.quantity' },
+        revenue: { $sum: { $multiply: ['$items.quantity', '$items.rateApplied'] } },
+        grossProfit: { $sum: '$financials.netProfitAmount' },
+        txCount: { $sum: 1 },
+      }
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: '_id.productId',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    { $unwind: '$product' },
+    {
+      $project: {
+        productId: '$_id.productId',
+        variantId: '$_id.variantId',
+        productName: '$product.name',
+        sizeLabel: {
+          $let: {
+            vars: {
+              v: {
+                $first: {
+                  $filter: {
+                    input: '$product.variants',
+                    as: 'v',
+                    cond: { $eq: ['$$v.variantId', '$_id.variantId'] }
+                  }
+                }
+              }
+            },
+            in: '$$v.sizeLabel'
+          }
+        },
+        unitType: '$product.unitType',
+        qtySold: 1, revenue: 1, grossProfit: 1, txCount: 1,
+      }
+    },
+    { $sort: { revenue: -1 } },
+  ])
+
+  // ── Outstanding khata ──
   const khataFilter = allowedBranches.length > 0
-    ? { registeredBranch: { $in: allowedBranches.map((b) => new mongoose.Types.ObjectId(b)) } }
+    ? { registeredBranch: { $in: allowedBranches } }
     : {}
   const [khataTotal] = await Customer.aggregate([
     { $match: khataFilter },
     { $group: { _id: null, totalDue: { $sum: '$khata.currentDue' } } }
   ])
 
-  // Branches available to the caller (for the dropdown) — never reveals unauthorized branches
+  // ── Visible branches for dropdown ──
   const visibleBranches = await Branch.find(
     role === 'SUPER_ADMIN' ? {} : { _id: { $in: assignedBranches } }
-  ).select('_id name').lean()
+  ).select('_id name').lean() as any[]
+
+  const emptySummary = {
+    salesRevenue: 0, cogs: 0, grossProfit: 0,
+    procurementCost: 0, expenses: 0, netProfit: 0,
+    cashIn: 0, cashOut: 0, khataAdded: 0, khataCollected: 0,
+    salesCount: 0, procurementCount: 0, txCount: 0,
+  }
 
   return NextResponse.json({
-    summary: summary ?? {
-      totalRevenue: 0, totalCashCollected: 0,
-      totalNetProfit: 0, totalKhataAdded: 0, txCount: 0
-    },
+    summary: summary ?? emptySummary,
     trend,
-    byType,
-    byBranch: byBranchNamed,
-    overrides,
+    byBranch,
+    byProduct,
     totalOutstandingKhata: khataTotal?.totalDue ?? 0,
-    visibleBranches
+    visibleBranches: visibleBranches.map((b: any) => ({ _id: b._id.toString(), name: b.name })),
   })
 }

@@ -263,7 +263,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 w-full">
 
       {/* ── Section 1: রাতের ক্যাশ চেক ── */}
       <div className="lcard overflow-hidden">

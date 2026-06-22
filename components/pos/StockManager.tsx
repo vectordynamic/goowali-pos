@@ -27,7 +27,6 @@ interface Product {
 interface RowState {
   quantity: string
   buyingPrice: string
-  setMode: boolean        // false = add (default), true = set total
   recordAsPurchase: boolean
   saving: boolean
 }
@@ -63,15 +62,14 @@ export default function StockManager({ branchId }: { branchId: string }) {
   function getRow(key: string, buyingPrice: number): RowState {
     return rows[key] ?? {
       quantity: '',
-      buyingPrice: buyingPrice > 0 ? '' : '',
-      setMode: false,
-      recordAsPurchase: false,
+      buyingPrice: buyingPrice > 0 ? String(buyingPrice) : '',
+      recordAsPurchase: true,
       saving: false,
     }
   }
 
-  function setRow(key: string, patch: Partial<RowState>) {
-    setRows((prev) => ({ ...prev, [key]: { ...getRow(key, 0), ...prev[key], ...patch } }))
+  function setRow(key: string, patch: Partial<RowState>, bpHint = 0) {
+    setRows((prev) => ({ ...prev, [key]: { ...getRow(key, bpHint), ...prev[key], ...patch } }))
   }
 
   async function handleSave(product: Product, variant: Variant) {
@@ -88,6 +86,10 @@ export default function StockManager({ branchId }: { branchId: string }) {
       toast.error('ক্রয় মূল্য দিন')
       return
     }
+    if (!row.recordAsPurchase) {
+      toast.error('দোকানের টাকায় কিনেছি সিলেক্ট করুন')
+      return
+    }
 
     setRow(key, { saving: true })
 
@@ -98,7 +100,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
         branchId,
         productId: product._id,
         variantId: variant.variantId,
-        action: row.setMode ? 'set' : 'add',
+        action: 'add',
         quantity: qty,
         buyingPrice: row.buyingPrice !== '' ? Number(row.buyingPrice) : undefined,
         recordAsPurchase: row.recordAsPurchase,
@@ -185,7 +187,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
               const row = getRow(key, buyingPrice)
               const unit = product.unitType === 'Liquid' ? 'L' : product.unitType === 'Weight' ? 'kg' : 'পিস'
               const label = variant.sizeLabel ?? variant.variantId
-              const preview = !row.setMode && row.quantity
+              const preview = row.quantity
                 ? `${stockLevel} + ${row.quantity} = ${stockLevel + Number(row.quantity)}`
                 : null
 
@@ -219,9 +221,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                   <div className="flex items-end gap-2 flex-wrap">
                     {/* Qty */}
                     <div className="flex-1 min-w-[80px]">
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        {row.setMode ? 'মোট কত হবে' : 'কত পেলেন'}
-                      </label>
+                      <label className="text-xs font-bold text-gray-500 block mb-1">কত পেলেন</label>
                       <input
                         type="number"
                         min="0"
@@ -229,7 +229,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                         className="w-full border-2 border-gray-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-blue-400 placeholder:text-gray-300"
                         placeholder="০"
                         value={row.quantity}
-                        onChange={(e) => setRow(key, { quantity: e.target.value })}
+                        onChange={(e) => setRow(key, { quantity: e.target.value }, buyingPrice)}
                       />
                     </div>
 
@@ -248,7 +248,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                         }`}
                         placeholder={buyingPrice > 0 ? `${buyingPrice}` : 'দাম'}
                         value={row.buyingPrice}
-                        onChange={(e) => setRow(key, { buyingPrice: e.target.value })}
+                        onChange={(e) => setRow(key, { buyingPrice: e.target.value }, buyingPrice)}
                       />
                     </div>
 
@@ -263,33 +263,21 @@ export default function StockManager({ branchId }: { branchId: string }) {
                     </button>
                   </div>
 
-                  {/* Secondary options — compact, shown only when row has data */}
                   {row.quantity && (
-                    <div className="flex items-center gap-4 flex-wrap pl-1">
-                      <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-gray-600">
-                        <input
-                          type="checkbox"
-                          checked={row.setMode}
-                          onChange={(e) => setRow(key, { setMode: e.target.checked })}
-                          className="w-4 h-4 accent-blue-600"
-                        />
-                        মোট সেট করতে চাই
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-gray-600">
-                        <input
-                          type="checkbox"
-                          checked={row.recordAsPurchase}
-                          onChange={(e) => setRow(key, { recordAsPurchase: e.target.checked })}
-                          className="w-4 h-4 accent-blue-600"
-                        />
-                        দোকানের টাকায় কিনেছি
-                        {row.recordAsPurchase && row.quantity && row.buyingPrice && (
-                          <span className="text-blue-600 font-black ml-1">
-                            ৳{(Number(row.quantity) * Number(row.buyingPrice)).toLocaleString()}
-                          </span>
-                        )}
-                      </label>
-                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-green-700 pl-1">
+                      <input
+                        type="checkbox"
+                        checked={row.recordAsPurchase}
+                        onChange={(e) => setRow(key, { recordAsPurchase: e.target.checked }, buyingPrice)}
+                        className="w-4 h-4 accent-green-600"
+                      />
+                      দোকানের টাকায় কিনেছি
+                      {row.recordAsPurchase && row.quantity && row.buyingPrice && (
+                        <span className="text-green-700 font-black ml-1">
+                          ৳{(Number(row.quantity) * Number(row.buyingPrice)).toLocaleString()}
+                        </span>
+                      )}
+                    </label>
                   )}
                 </div>
               )

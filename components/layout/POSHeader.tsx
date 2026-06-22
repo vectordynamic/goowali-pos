@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
-import { ShoppingCart, Truck, FileText, LayoutDashboard, LogOut, UserRound, ClipboardList, Wallet, Package } from 'lucide-react'
+import { ShoppingCart, FileText, LayoutDashboard, LogOut, UserRound, ClipboardList, Wallet, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
 
@@ -23,8 +23,7 @@ export default function POSHeader({ branchId, userName, role }: Props) {
     { href: `/${branchId}/transactions`, label: isManager ? 'হিসাব' : 'Sales Log', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
     { href: `/${branchId}/customers`, label: isManager ? 'কাস্টমার' : 'Customers', icon: UserRound, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
     { href: `/${branchId}/stock`, label: isManager ? 'স্টক' : 'Stock', icon: Package, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
-    { href: `/${branchId}/wholesale-dispatch`, label: 'Dispatch', icon: Truck, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
-    { href: `/${branchId}/due`, label: isManager ? 'বাকি' : 'Due', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
+{ href: `/${branchId}/due`, label: isManager ? 'বাকি' : 'Due', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] },
     { href: `/${branchId}/z-report`, label: isManager ? 'রিপোর্ট' : 'Z-Report', icon: FileText, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER'] }
   ].filter((t) => t.roles.includes(role))
 

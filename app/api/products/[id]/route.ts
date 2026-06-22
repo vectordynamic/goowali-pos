@@ -78,7 +78,7 @@ export async function PUT(
   const parsed = validate(BranchPricingSchema, body)
   if (!parsed.success) return parsed.response
 
-  const { variantId, branchId, buyingPrice, stockLevel } = parsed.data
+  const { variantId, branchId, buyingPrice, mrpPrice, stockLevel } = parsed.data
 
   // BRANCH_ADMIN can only set stock for their own branches — 404 to prevent enumeration
   if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
@@ -93,9 +93,10 @@ export async function PUT(
 
   if (existing) {
     if (buyingPrice !== undefined) existing.buyingPrice = buyingPrice
+    if (mrpPrice !== undefined) existing.mrpPrice = mrpPrice
     if (stockLevel !== undefined) existing.stockLevel = stockLevel
   } else {
-    variant.branchDetails.push({ branchId, buyingPrice, stockLevel: stockLevel ?? 0 })
+    variant.branchDetails.push({ branchId, buyingPrice, mrpPrice: mrpPrice ?? 0, stockLevel: stockLevel ?? 0 })
   }
 
   await product.save()

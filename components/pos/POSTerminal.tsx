@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { Plus, Minus, Trash2, Search, X, CheckCircle2 } from 'lucide-react'
+import { Plus, Minus, Trash2, Search, X, CheckCircle2, Lock } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 
 interface BranchDetail {
   branchId: string
   stockLevel: number
+  mrpPrice: number
 }
 
 interface Variant {
@@ -31,7 +32,7 @@ interface CartItem {
   productName: string
   sizeLabel?: string
   quantity: number
-  rateApplied: number
+  mrpPrice: number
   stockLevel: number
 }
 
@@ -72,6 +73,7 @@ export default function POSTerminal({ branchId }: Props) {
 
   // Payment
   const [mode, setMode] = useState<PaymentMode>('Cash Sale')
+  const [discount, setDiscount] = useState(0)
   const [cashPaid, setCashPaid] = useState(0)
   const [submitting, setSubmitting] = useState(false)
 
@@ -131,7 +133,7 @@ export default function POSTerminal({ branchId }: Props) {
         productName: product.name,
         sizeLabel: variant.sizeLabel,
         quantity: 1,
-        rateApplied: 0,
+        mrpPrice: bd.mrpPrice ?? 0,
         stockLevel: bd.stockLevel,
       }]
     })
@@ -147,14 +149,6 @@ export default function POSTerminal({ branchId }: Props) {
     )
   }
 
-  function updateRate(key: string, rate: number) {
-    setCart((prev) =>
-      prev.map((i) =>
-        `${i.productId}:${i.variantId}` === key ? { ...i, rateApplied: rate } : i
-      )
-    )
-  }
-
   function clearCustomer() {
     setSelectedCustomer(null)
     setCustomerPhone('')
@@ -164,9 +158,14 @@ export default function POSTerminal({ branchId }: Props) {
     setTimeout(() => phoneRef.current?.focus(), 50)
   }
 
-  const cartTotal = cart.reduce((s, i) => s + i.rateApplied * i.quantity, 0)
-
+  const cartSubtotal = cart.reduce((s, i) => s + i.mrpPrice * i.quantity, 0)
+  const cartTotal = Math.max(0, cartSubtotal - discount)
   const change = mode === 'Cash Sale' ? cashPaid - cartTotal : 0
+
+  useEffect(() => {
+    if (mode === 'Cash Sale') setCashPaid(cartTotal)
+  }, [cartTotal, mode])
+
   const addedToKhata =
     mode === 'Credit Sale' ? cartTotal :
     mode === 'Partial Payment' ? Math.max(0, cartTotal - cashPaid) : 0
@@ -181,6 +180,10 @@ export default function POSTerminal({ branchId }: Props) {
   async function handleCheckout() {
     if (cart.length === 0) {
       toast.error('কোনো পণ্য যোগ করা হয়নি')
+      return
+    }
+    if (cart.some((i) => i.mrpPrice <= 0)) {
+      toast.error('কিছু পণ্যের দাম নির্ধারণ করা হয়নি')
       return
     }
     if (mode !== 'Cash Sale' && !hasCustomer) {
@@ -228,8 +231,9 @@ export default function POSTerminal({ branchId }: Props) {
           productId: i.productId,
           variantId: i.variantId,
           quantity: i.quantity,
-          rateApplied: i.rateApplied,
+          rateApplied: i.mrpPrice,
         })),
+        discount: discount > 0 ? discount : undefined,
         cashPaid: mode === 'Credit Sale' ? 0 : cashPaid,
       }),
     })
@@ -242,9 +246,9 @@ export default function POSTerminal({ branchId }: Props) {
       return
     }
 
-    // Reset
     setCart([])
     setMode('Cash Sale')
+    setDiscount(0)
     setCashPaid(0)
     setSelectedCustomer(null)
     setCustomerPhone('')
@@ -259,7 +263,6 @@ export default function POSTerminal({ branchId }: Props) {
 
       {/* ── Left: Product grid ── */}
       <div className="flex-1 flex flex-col overflow-hidden p-4">
-        {/* Search */}
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -296,7 +299,12 @@ export default function POSTerminal({ branchId }: Props) {
                       {product.name}
                     </p>
                     {variant.sizeLabel && (
-                      <p className="text-sm text-gray-500 mb-2">{variant.sizeLabel}</p>
+                      <p className="text-sm text-gray-500 mb-1">{variant.sizeLabel}</p>
+                    )}
+                    {bd.mrpPrice > 0 && (
+                      <p className="text-sm font-semibold text-blue-600 mb-1">
+                        ৳{bd.mrpPrice}/{product.unitType === 'Liquid' ? 'L' : product.unitType === 'Weight' ? 'kg' : 'পিস'}
+                      </p>
                     )}
                     {inStock ? (
                       <span className="inline-block bg-green-100 text-green-700 text-sm font-semibold px-2 py-0.5 rounded-lg">
@@ -315,7 +323,7 @@ export default function POSTerminal({ branchId }: Props) {
         )}
       </div>
 
-      {/* ── Right: Order + Payment (always visible, no modal) ── */}
+      {/* ── Right: Order + Payment ── */}
       <div className="w-96 flex-shrink-0 bg-white border-l-2 border-gray-200 flex flex-col shadow-xl">
 
         {/* Customer section */}
@@ -347,7 +355,6 @@ export default function POSTerminal({ branchId }: Props) {
             </div>
           ) : (
             <div className="space-y-2">
-              {/* Phone with autocomplete */}
               <div className="relative">
                 <input
                   ref={phoneRef}
@@ -385,7 +392,6 @@ export default function POSTerminal({ branchId }: Props) {
                 )}
               </div>
 
-              {/* Name */}
               <input
                 className="w-full px-4 py-3 text-base border-2 border-gray-300 rounded-xl bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-400"
                 placeholder="নাম লিখুন (ঐচ্ছিক)"
@@ -393,7 +399,6 @@ export default function POSTerminal({ branchId }: Props) {
                 onChange={(e) => setCustomerName(e.target.value)}
               />
 
-              {/* Type toggle - only when phone entered */}
               {customerPhone.trim() && (
                 <div className="flex gap-2">
                   {(['Retail', 'Paikari'] as const).map((t) => (
@@ -412,7 +417,6 @@ export default function POSTerminal({ branchId }: Props) {
                 </div>
               )}
 
-              {/* New customer notice */}
               {pendingCustomer && (
                 <p className="text-sm text-green-600 font-medium bg-green-50 rounded-xl px-3 py-2 border border-green-200">
                   ✓ নতুন হিসাব খোলা হবে
@@ -422,7 +426,7 @@ export default function POSTerminal({ branchId }: Props) {
           )}
         </div>
 
-        {/* Order items — scrollable */}
+        {/* Order items */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
           {cart.length === 0 ? (
             <p className="text-center text-gray-400 text-base py-8">
@@ -447,7 +451,6 @@ export default function POSTerminal({ branchId }: Props) {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Qty */}
                     <button
                       onClick={() => updateQty(key, -1)}
                       className="w-9 h-9 rounded-xl bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-gray-700 text-lg"
@@ -462,23 +465,18 @@ export default function POSTerminal({ branchId }: Props) {
                       <Plus className="w-4 h-4" />
                     </button>
 
-                    {/* Price input */}
-                    <div className="flex-1 relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">৳</span>
-                      <input
-                        type="number"
-                        value={item.rateApplied || ''}
-                        onChange={(e) => updateRate(key, Number(e.target.value))}
-                        className="w-full pl-7 pr-2 py-2 bg-white border-2 border-gray-300 rounded-xl text-base font-bold text-gray-800 focus:outline-none focus:border-blue-400 placeholder:text-gray-300"
-                        placeholder="দাম"
-                        min="0"
-                      />
+                    {/* Locked MRP price */}
+                    <div className="flex-1 flex items-center gap-1.5 bg-gray-100 border-2 border-gray-200 rounded-xl px-3 py-2">
+                      <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <span className="text-base font-bold text-gray-600">
+                        ৳{item.mrpPrice > 0 ? item.mrpPrice : '—'}
+                      </span>
                     </div>
                   </div>
 
-                  {item.rateApplied > 0 && (
+                  {item.mrpPrice > 0 && (
                     <p className="text-right text-base font-bold text-blue-600 mt-1">
-                      = {formatCurrency(item.rateApplied * item.quantity)}
+                      = {formatCurrency(item.mrpPrice * item.quantity)}
                     </p>
                   )}
                 </div>
@@ -487,14 +485,42 @@ export default function POSTerminal({ branchId }: Props) {
           )}
         </div>
 
-        {/* ── Payment section — always visible ── */}
+        {/* ── Payment section ── */}
         <div className="border-t-2 border-gray-200 bg-white px-4 pt-3 pb-4 space-y-3">
 
-          {/* Total */}
-          <div className="flex items-center justify-between bg-gray-50 rounded-2xl px-4 py-3">
-            <span className="text-xl font-bold text-gray-700">মোট</span>
-            <span className="text-3xl font-black text-blue-600">{formatCurrency(cartTotal)}</span>
-          </div>
+          {cart.length > 0 ? (
+            <div className="space-y-2">
+              {discount > 0 && (
+                <div className="flex items-center justify-between text-sm text-gray-500 px-1">
+                  <span>মোট (MRP)</span>
+                  <span className="font-semibold">{formatCurrency(cartSubtotal)}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="text-sm font-bold text-gray-500 mb-1 block">ছাড় (টাকা)</label>
+                <input
+                  type="number"
+                  className="w-full px-4 py-2 text-base font-bold border-2 border-orange-200 rounded-xl bg-orange-50 text-orange-700 focus:outline-none focus:border-orange-400 placeholder:text-orange-300"
+                  value={discount || ''}
+                  onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
+                  placeholder="০"
+                  min="0"
+                  max={cartSubtotal}
+                />
+              </div>
+
+              <div className="flex items-center justify-between bg-gray-50 rounded-2xl px-4 py-3">
+                <span className="text-xl font-bold text-gray-700">মোট</span>
+                <span className="text-3xl font-black text-blue-600">{formatCurrency(cartTotal)}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-gray-50 rounded-2xl px-4 py-3">
+              <span className="text-xl font-bold text-gray-700">মোট</span>
+              <span className="text-3xl font-black text-blue-600">{formatCurrency(0)}</span>
+            </div>
+          )}
 
           {/* Payment mode */}
           <div>
@@ -530,7 +556,6 @@ export default function POSTerminal({ branchId }: Props) {
             </div>
           </div>
 
-          {/* Cash received (not for full credit) */}
           {mode !== 'Credit Sale' && (
             <div>
               <label className="text-sm font-bold text-gray-500 mb-1 block">
@@ -552,14 +577,12 @@ export default function POSTerminal({ branchId }: Props) {
             </div>
           )}
 
-          {/* Due to khata notice */}
           {addedToKhata > 0 && (
             <p className="text-base font-bold text-orange-600 bg-orange-50 rounded-xl px-3 py-2 text-center border border-orange-200">
               বাকিতে যাবে: {formatCurrency(addedToKhata)}
             </p>
           )}
 
-          {/* Confirm button */}
           <button
             onClick={handleCheckout}
             disabled={submitting || cart.length === 0}

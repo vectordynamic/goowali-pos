@@ -32,6 +32,7 @@ export default async function BranchCustomersPage({
           role={role as any}
           assignedBranches={assignedBranches}
           forceBranchId={branchId}
+          lightMode
         />
       </div>
     </div>

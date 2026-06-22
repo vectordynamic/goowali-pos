@@ -11,7 +11,6 @@ import {
   LogOut,
   ShoppingCart,
   UserRound,
-  Truck,
   ClipboardList,
   Wallet,
   History,
@@ -32,8 +31,8 @@ interface Props {
 }
 
 const adminNavItems = [
-  { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
-  { href: '/branch-report', label: 'Branch Report', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
+  { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'], branchAdminLabel: 'Analytics' },
+  { href: '/branch-report', label: 'Branch Report', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'], branchAdminLabel: 'Daily Report' },
   { href: '/products', label: 'Products', icon: Package, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/customers', label: 'Customers', icon: UserRound, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/regular-orders', label: 'Regular Orders', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
@@ -79,6 +78,9 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
         {/* Main admin nav */}
         {visibleItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/')
+          const label = role === 'BRANCH_ADMIN' && (item as any).branchAdminLabel
+            ? (item as any).branchAdminLabel
+            : item.label
           return (
             <Link
               key={item.href}
@@ -91,12 +93,12 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
               )}
             >
               <item.icon className="w-4 h-4 flex-shrink-0" />
-              {item.label}
+              {label}
             </Link>
           )
         })}
 
-        {/* POS terminal shortcuts — shown for both SUPER_ADMIN and BRANCH_ADMIN */}
+        {/* POS terminal shortcuts */}
         {assignedBranches.length > 0 && (
           <div className="pt-4">
             <p className="text-xs text-slate-600 px-3 mb-1.5 uppercase tracking-wider font-medium">
@@ -106,31 +108,19 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
               const name = branchName(bid)
               const posActive = pathname.startsWith(`/${bid}`)
               return (
-                <div key={bid} className={cn(
-                  'rounded-lg mb-0.5',
-                  posActive ? 'bg-blue-600/10' : ''
-                )}>
-                  <Link
-                    href={`/${bid}/pos`}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                      posActive
-                        ? 'text-blue-400 font-medium'
-                        : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                    )}
-                  >
-                    <ShoppingCart className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="truncate">{name}</span>
-                  </Link>
-                  {/* Wholesale shortcut — not for MANAGER (MANAGER can't reach dispatch) */}
-                  <Link
-                    href={`/${bid}/wholesale-dispatch`}
-                    className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs text-slate-600 hover:text-slate-300 hover:bg-slate-800 transition-colors ml-1"
-                  >
-                    <Truck className="w-3 h-3 flex-shrink-0" />
-                    Wholesale
-                  </Link>
-                </div>
+                <Link
+                  key={bid}
+                  href={`/${bid}/pos`}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                    posActive
+                      ? 'bg-blue-600/20 text-blue-400 font-medium'
+                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+                  )}
+                >
+                  <ShoppingCart className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{name}</span>
+                </Link>
               )
             })}
           </div>

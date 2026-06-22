@@ -80,10 +80,18 @@ export default function SalesLog({ branchId, role }: Props) {
   useEffect(() => { load() }, [load])
 
   const SALE_TYPES = ['Cash Sale', 'Credit Sale', 'Partial Payment']
+  const CASH_IN_TYPES = ['Cash Sale', 'Partial Payment', 'Due Collection']
   const saleCount = transactions.filter((t) => SALE_TYPES.includes(t.transactionType)).length
-  const cashTotal = transactions.reduce((s, t) => s + t.financials.cashPaid, 0)
+  const cashTotal = transactions
+    .filter((t) => CASH_IN_TYPES.includes(t.transactionType))
+    .reduce((s, t) => s + t.financials.cashPaid, 0)
   const khataTotal = transactions.reduce((s, t) => s + t.financials.amountAddedToKhata, 0)
-  const total = transactions.reduce((s, t) => s + t.financials.totalBill, 0)
+  const total = transactions
+    .filter((t) => SALE_TYPES.includes(t.transactionType))
+    .reduce((s, t) => s + t.financials.totalBill, 0)
+  const procurementTotal = transactions
+    .filter((t) => t.transactionType === 'Procurement')
+    .reduce((s, t) => s + t.financials.cashPaid, 0)
 
   const isToday = date === todayDate()
 
@@ -154,6 +162,12 @@ export default function SalesLog({ branchId, role }: Props) {
             <div className="lcard px-4 py-3">
               <p className="text-sm text-gray-500 mb-1">বাকি দিয়েছি</p>
               <p className="text-xl font-black text-amber-600">{formatCurrency(khataTotal)}</p>
+            </div>
+          )}
+          {procurementTotal > 0 && (
+            <div className="lcard px-4 py-3">
+              <p className="text-sm text-gray-500 mb-1">স্টক কিনেছি</p>
+              <p className="text-xl font-black text-red-500">{formatCurrency(procurementTotal)}</p>
             </div>
           )}
         </div>

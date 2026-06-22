@@ -107,7 +107,7 @@ export default function UserManager({ role: actorRole }: Props) {
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Role</th>
-                <th>Branches</th>
+                {actorRole === 'SUPER_ADMIN' && <th>Branches</th>}
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -119,25 +119,29 @@ export default function UserManager({ role: actorRole }: Props) {
                   <td className="font-mono text-xs">{user.phone}</td>
                   <td>
                     <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-medium', ROLE_COLORS[user.role])}>
-                      {user.role.replace('_', ' ')}
+                      {user.role === 'SUPER_ADMIN' ? 'Super Admin'
+                        : user.role === 'BRANCH_ADMIN' ? 'Admin'
+                        : 'Manager'}
                     </span>
                   </td>
-                  <td className="text-xs">
-                    {user.role === 'SUPER_ADMIN' ? (
-                      <span className="text-violet-400">All branches</span>
-                    ) : user.assignedBranches.length === 0 ? (
-                      <span className="text-slate-600">None assigned</span>
-                    ) : (
-                      user.assignedBranches.map((b) => (
-                        <span
-                          key={b}
-                          className="inline-block bg-slate-800 rounded px-1.5 py-0.5 mr-1 mb-0.5 text-slate-400"
-                        >
-                          {branchName(b)}
-                        </span>
-                      ))
-                    )}
-                  </td>
+                  {actorRole === 'SUPER_ADMIN' && (
+                    <td className="text-xs">
+                      {user.role === 'SUPER_ADMIN' ? (
+                        <span className="text-violet-400">All branches</span>
+                      ) : user.assignedBranches.length === 0 ? (
+                        <span className="text-slate-600">None assigned</span>
+                      ) : (
+                        user.assignedBranches.map((b) => (
+                          <span
+                            key={b}
+                            className="inline-block bg-slate-800 rounded px-1.5 py-0.5 mr-1 mb-0.5 text-slate-400"
+                          >
+                            {branchName(b)}
+                          </span>
+                        ))
+                      )}
+                    </td>
+                  )}
                   <td>
                     <span className={user.isActive ? 'badge-success' : 'badge-danger'}>
                       {user.isActive ? 'Active' : 'Inactive'}
@@ -341,10 +345,15 @@ function UserModal({
             <select
               className="input-base"
               value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
+              onChange={(e) => {
+                setRole(e.target.value as Role)
+                setSelectedBranches([])
+              }}
             >
               {availableRoles.map((r) => (
-                <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                <option key={r} value={r}>
+                  {r === 'SUPER_ADMIN' ? 'Super Admin' : r === 'BRANCH_ADMIN' ? 'Admin' : 'Manager'}
+                </option>
               ))}
             </select>
           </div>
@@ -352,11 +361,27 @@ function UserModal({
           {role !== 'SUPER_ADMIN' && (
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">
-                Assigned Branches *
+                {role === 'MANAGER' ? 'Branch *' : 'Assigned Branches *'}
                 <span className="text-slate-600 ml-1">(required)</span>
               </label>
               {branches.length === 0 ? (
                 <p className="text-xs text-rose-400 italic">No branches created yet. Create a branch first.</p>
+              ) : role === 'MANAGER' ? (
+                <>
+                  <select
+                    className={`input-base ${selectedBranches.length === 0 ? 'border-rose-500' : ''}`}
+                    value={selectedBranches[0] ?? ''}
+                    onChange={(e) => setSelectedBranches(e.target.value ? [e.target.value] : [])}
+                  >
+                    <option value="">Select a branch…</option>
+                    {branches.map((b) => (
+                      <option key={b._id} value={b._id}>{b.name}</option>
+                    ))}
+                  </select>
+                  {selectedBranches.length === 0 && (
+                    <p className="text-rose-400 text-xs mt-1">Select a branch</p>
+                  )}
+                </>
               ) : (
                 <>
                   <div className={`space-y-1.5 max-h-40 overflow-y-auto border rounded-lg p-2 bg-slate-800/30 ${

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
-import { assertBranchAccess, branchDenied } from '@/lib/utils'
+import { assertBranchAccess, branchDenied, today } from '@/lib/utils'
+import { updateDailySummary } from '@/lib/update-daily-summary'
 import type { Role } from '@/types'
 import { z } from 'zod'
 import { objectId } from '@/lib/validators'
@@ -106,6 +107,11 @@ export async function POST(req: NextRequest) {
       notes: notes ?? `Stock purchase — ${product.name} (${variantId})`
     })
     procurementId = txn._id.toString()
+  }
+
+  // Update pre-computed daily summary if a procurement was recorded (non-blocking)
+  if (recordAsPurchase) {
+    updateDailySummary(branchId, today()).catch(() => {})
   }
 
   return NextResponse.json({

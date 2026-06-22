@@ -31,8 +31,8 @@ export default withAuth(
       }
     }
 
-    // /[branchId]/(pos|transactions|customers|wholesale-dispatch|z-report)
-    const posMatch = pathname.match(/^\/([a-f0-9]{24})\/(pos|transactions|customers|wholesale-dispatch|due|z-report)/)
+    // /[branchId]/(pos|transactions|customers|stock|due|z-report)
+    const posMatch = pathname.match(/^\/([a-f0-9]{24})\/(pos|transactions|customers|stock|due|z-report)/)
     if (posMatch) {
       const branchId = posMatch[1]
       const section = posMatch[2]
@@ -42,10 +42,6 @@ export default withAuth(
         return NextResponse.redirect(new URL('/', req.url))
       }
 
-      // MANAGER cannot access wholesale-dispatch
-      if (role === 'MANAGER' && section === 'wholesale-dispatch') {
-        return NextResponse.redirect(new URL(`/${branchId}/pos`, req.url))
-      }
     }
 
     // Block any path that looks like /<24-hex-char-id>/... that isn't a valid POS route
