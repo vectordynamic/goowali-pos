@@ -44,10 +44,18 @@ interface Variant {
   branchDetails: BranchDetail[]
 }
 
+interface PooledStock {
+  branchId: string
+  stockQty: number
+}
+
 interface Product {
   _id: string
   name: string
+  productCode?: string
   unitType: string
+  isPooled?: boolean
+  pooledStock?: PooledStock[]
   variants: Variant[]
 }
 
@@ -55,6 +63,7 @@ const CASH_REASON_THRESHOLD = 30   // ৳30
 const STOCK_REASON_THRESHOLD = 1   // 1 unit (L / kg / pcs)
 
 export default function ZReport({ branchId }: { branchId: string }) {
+  const [dayStatus, setDayStatus] = useState<string | null>(null)
   const [systemTotals, setSystemTotals] = useState<SystemTotals | null>(null)
   const [savedNightCash, setSavedNightCash] = useState<number | null>(null)
   const [savedPhysicalStock, setSavedPhysicalStock] = useState<PhysicalStockEntry[]>([])
@@ -91,6 +100,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
       fetch(`/api/products?branchId=${branchId}`).then((r) => r.json()),
     ])
       .then(([closing, prods]) => {
+        setDayStatus((closing?.status ?? 'Pending').toLowerCase())
         setSystemTotals(closing?.mathematicalSystemTotals ?? null)
 
         if (closing?.nightCashCounted != null) {
@@ -164,6 +174,10 @@ export default function ZReport({ branchId }: { branchId: string }) {
 
   // ── Physical stock ──
   function getSystemStock(product: Product, variantId: string) {
+    if (product.isPooled && variantId === 'pooled') {
+      const ps = product.pooledStock?.find((b) => b.branchId === branchId)
+      return ps?.stockQty ?? 0
+    }
     const v = product.variants.find((x) => x.variantId === variantId)
     const bd = v?.branchDetails.find((b) => b.branchId === branchId)
     return bd?.stockLevel ?? 0
@@ -172,16 +186,29 @@ export default function ZReport({ branchId }: { branchId: string }) {
   async function savePhysicalStock() {
     const entries: PhysicalStockEntry[] = []
     for (const product of products) {
-      for (const variant of product.variants) {
-        const key = `${product._id}:${variant.variantId}`
+      if (product.isPooled) {
+        const key = `${product._id}:pooled`
         const raw = stockInputs[key]
-        if (raw === undefined || raw === '') continue
-        entries.push({
-          productId: product._id,
-          variantId: variant.variantId,
-          physicalQty: Number(raw),
-          systemQty: getSystemStock(product, variant.variantId),
-        })
+        if (raw !== undefined && raw !== '') {
+          entries.push({
+            productId: product._id,
+            variantId: 'pooled',
+            physicalQty: Number(raw),
+            systemQty: getSystemStock(product, 'pooled'),
+          })
+        }
+      } else {
+        for (const variant of product.variants) {
+          const key = `${product._id}:${variant.variantId}`
+          const raw = stockInputs[key]
+          if (raw === undefined || raw === '') continue
+          entries.push({
+            productId: product._id,
+            variantId: variant.variantId,
+            physicalQty: Number(raw),
+            systemQty: getSystemStock(product, variant.variantId),
+          })
+        }
       }
     }
     setSavingStock(true)
@@ -217,21 +244,34 @@ export default function ZReport({ branchId }: { branchId: string }) {
   }
 
   // ── Pre-orders ──
-  const milkProducts = products.filter((p) => p.name.toLowerCase().includes('milk'))
+  const milkProducts = products.filter((p) => p.name.toLowerCase().includes('milk') || p.productCode?.toLowerCase() === 'milk')
 
   async function savePreOrders() {
     const entries: PreOrderEntry[] = []
     for (const product of milkProducts) {
-      for (const variant of product.variants) {
-        const key = `${product._id}:${variant.variantId}`
+      if (product.isPooled) {
+        const key = `${product._id}:pooled`
         const raw = preOrderInputs[key]
-        if (!raw || Number(raw) <= 0) continue
-        entries.push({
-          productId: product._id,
-          variantId: variant.variantId,
-          productName: `${product.name}${variant.sizeLabel ? ' ' + variant.sizeLabel : ''}`,
-          quantity: Number(raw),
-        })
+        if (raw && Number(raw) > 0) {
+          entries.push({
+            productId: product._id,
+            variantId: 'pooled',
+            productName: product.name,
+            quantity: Number(raw),
+          })
+        }
+      } else {
+        for (const variant of product.variants) {
+          const key = `${product._id}:${variant.variantId}`
+          const raw = preOrderInputs[key]
+          if (!raw || Number(raw) <= 0) continue
+          entries.push({
+            productId: product._id,
+            variantId: variant.variantId,
+            productName: `${product.name}${variant.sizeLabel ? ' ' + variant.sizeLabel : ''}`,
+            quantity: Number(raw),
+          })
+        }
       }
     }
     setSavingPreOrders(true)
@@ -260,6 +300,29 @@ export default function ZReport({ branchId }: { branchId: string }) {
 
   if (loading) {
     return <div className="text-center text-gray-400 py-16 text-lg">লোড হচ্ছে...</div>
+  }
+
+  // ── Day not started: show friendly message ──
+  if (dayStatus === 'pending') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-black text-gray-700">আজকের দিন এখনো শুরু হয়নি</h2>
+        <p className="text-gray-500 text-sm text-center max-w-xs">
+          রিপোর্ট দেখতে বা হিসাব বন্ধ করতে প্রথমে বিক্রি পেজ থেকে “দিন শুরু করুন” করুন।
+        </p>
+        <a
+          href={`/${branchId}/pos`}
+          className="mt-2 flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors"
+        >
+          ← বিক্রি পেজে যান
+        </a>
+      </div>
+    )
   }
 
   return (
@@ -405,22 +468,30 @@ export default function ZReport({ branchId }: { branchId: string }) {
                 <span className="text-xs font-bold text-gray-400 text-center">আসলে আছে</span>
               </div>
 
-              {products.map((product) =>
-                product.variants.map((variant) => {
-                  const key = `${product._id}:${variant.variantId}`
-                  const sysQty = getSystemStock(product, variant.variantId)
-                  const physRaw = stockInputs[key]
+              {products.flatMap((product) => {
+                const items = product.isPooled
+                  ? [{ key: `${product._id}:pooled`, variantId: 'pooled', name: product.name, sizeLabel: 'মোট পরিমাণ' }]
+                  : product.variants.map((v) => ({
+                      key: `${product._id}:${v.variantId}`,
+                      variantId: v.variantId,
+                      name: product.name,
+                      sizeLabel: v.sizeLabel,
+                    }))
+
+                return items.map((item) => {
+                  const sysQty = getSystemStock(product, item.variantId)
+                  const physRaw = stockInputs[item.key]
                   const physQty = physRaw !== undefined && physRaw !== '' ? Number(physRaw) : null
                   const gap = physQty !== null ? physQty - sysQty : null
                   const u = unit(product)
                   const showReasonBox = gap !== null && Math.abs(gap) > STOCK_REASON_THRESHOLD
 
                   return (
-                    <div key={key} className="space-y-2">
+                    <div key={item.key} className="space-y-2">
                       <div className="grid grid-cols-3 gap-2 items-center bg-gray-50 rounded-xl p-3">
                         <div>
-                          <p className="text-sm font-black text-gray-800">{product.name}</p>
-                          {variant.sizeLabel && <p className="text-xs text-gray-500">{variant.sizeLabel}</p>}
+                          <p className="text-sm font-black text-gray-800">{item.name}</p>
+                          {item.sizeLabel && <p className="text-xs text-gray-500">{item.sizeLabel}</p>}
                         </div>
                         <div className="text-center">
                           <span className="text-lg font-black text-gray-700">{sysQty} {u}</span>
@@ -433,7 +504,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
                             className="flex-1 border-2 border-gray-300 rounded-xl px-3 py-2 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-blue-400 text-center"
                             placeholder={String(sysQty)}
                             value={physRaw ?? ''}
-                            onChange={(e) => setStockInputs((p) => ({ ...p, [key]: e.target.value }))}
+                            onChange={(e) => setStockInputs((p) => ({ ...p, [item.key]: e.target.value }))}
                           />
                           {gap !== null && (
                             <span className={`text-sm font-black w-14 text-right ${
@@ -451,7 +522,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
                           <div className="flex items-center gap-1.5">
                             <MessageSquare className="w-3.5 h-3.5 text-orange-500" />
                             <p className="text-sm font-black text-orange-700">কারণ কি? (ঐচ্ছিক)</p>
-                            {savedStockReasons[key] && (
+                            {savedStockReasons[item.key] && (
                               <span className="text-xs text-green-600 font-bold ml-auto">✓ সেভ আছে</span>
                             )}
                           </div>
@@ -460,16 +531,16 @@ export default function ZReport({ branchId }: { branchId: string }) {
                               type="text"
                               className="flex-1 border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-orange-400 placeholder-gray-400"
                               placeholder="কেন পার্থক্য হলো? লিখুন..."
-                              value={stockReasons[key] ?? ''}
-                              onChange={(e) => setStockReasons((p) => ({ ...p, [key]: e.target.value }))}
+                              value={stockReasons[item.key] ?? ''}
+                              onChange={(e) => setStockReasons((p) => ({ ...p, [item.key]: e.target.value }))}
                             />
                             <button
-                              onClick={() => saveStockReason(product._id, variant.variantId)}
-                              disabled={!!savingStockReason[key]}
+                              onClick={() => saveStockReason(product._id, item.variantId)}
+                              disabled={!!savingStockReason[item.key]}
                               className="flex items-center gap-1 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg text-sm transition-colors disabled:opacity-40 whitespace-nowrap"
                             >
                               <Check className="w-3.5 h-3.5" />
-                              {savingStockReason[key] ? '...' : 'সেভ'}
+                              {savingStockReason[item.key] ? '...' : 'সেভ'}
                             </button>
                           </div>
                         </div>
@@ -477,7 +548,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
                     </div>
                   )
                 })
-              )}
+              })}
 
               <button
                 onClick={savePhysicalStock}
@@ -526,15 +597,20 @@ export default function ZReport({ branchId }: { branchId: string }) {
             )}
 
             <div className="space-y-3">
-              {milkProducts.map((product) =>
-                product.variants.map((variant) => {
-                  const key = `${product._id}:${variant.variantId}`
-                  const label = `${product.name}${variant.sizeLabel ? ' ' + variant.sizeLabel : ''}`
-                  const ordered = Number(preOrderInputs[key] || 0)
+              {milkProducts.flatMap((product) => {
+                const items = product.isPooled
+                  ? [{ key: `${product._id}:pooled`, label: `${product.name} (মোট পরিমাণ)` }]
+                  : product.variants.map((v) => ({
+                      key: `${product._id}:${v.variantId}`,
+                      label: `${product.name}${v.sizeLabel ? ' ' + v.sizeLabel : ''}`,
+                    }))
+
+                return items.map((item) => {
+                  const ordered = Number(preOrderInputs[item.key] || 0)
 
                   return (
-                    <div key={key} className="bg-gray-50 rounded-2xl p-4 space-y-2">
-                      <p className="text-base font-black text-gray-800">{label}</p>
+                    <div key={item.key} className="bg-gray-50 rounded-2xl p-4 space-y-2">
+                      <p className="text-base font-black text-gray-800">{item.label}</p>
                       <div className="flex items-center gap-3">
                         <label className="text-sm font-bold text-gray-600 whitespace-nowrap">
                           কালকের অর্ডার (L)
@@ -545,8 +621,8 @@ export default function ZReport({ branchId }: { branchId: string }) {
                           step="0.5"
                           className="flex-1 border-2 border-gray-300 rounded-xl px-4 py-2.5 text-xl font-black text-gray-800 bg-white focus:outline-none focus:border-blue-400"
                           placeholder="০"
-                          value={preOrderInputs[key] ?? ''}
-                          onChange={(e) => setPreOrderInputs((p) => ({ ...p, [key]: e.target.value }))}
+                          value={preOrderInputs[item.key] ?? ''}
+                          onChange={(e) => setPreOrderInputs((p) => ({ ...p, [item.key]: e.target.value }))}
                         />
                       </div>
                       {ordered > 0 && (
@@ -557,7 +633,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
                     </div>
                   )
                 })
-              )}
+              })}
             </div>
 
             {totalPreOrders > 0 && (

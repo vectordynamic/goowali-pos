@@ -20,7 +20,7 @@ export default async function POSPage({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="h-screen overflow-hidden bg-gray-50 flex flex-col">
       <POSHeader branchId={branchId} userId={id} userName={name ?? ''} role={role} />
       <POSTerminal branchId={branchId} userId={id} />
     </div>

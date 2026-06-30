@@ -13,7 +13,14 @@ interface BranchDetail {
 interface Variant {
   variantId: string
   sizeLabel?: string
+  portionSize?: number
   branchDetails: BranchDetail[]
+}
+
+interface PooledStockEntry {
+  branchId: string
+  stockQty: number
+  buyingPrice: number
 }
 
 interface Product {
@@ -21,7 +28,9 @@ interface Product {
   name: string
   unitType: string
   isOpenLoose: boolean
+  isPooled: boolean
   variants: Variant[]
+  pooledStock: PooledStockEntry[]
 }
 
 interface RowState {
@@ -48,11 +57,18 @@ export default function StockManager({ branchId }: { branchId: string }) {
 
   useEffect(() => { loadProducts() }, [loadProducts])
 
+  // ── Normal mode helpers ──────────────────────────────────────────────────────
   function getStock(product: Product, variantId: string) {
     const variant = product.variants.find((v) => v.variantId === variantId)
     if (!variant) return { stockLevel: 0, buyingPrice: 0 }
     const bd = variant.branchDetails.find((b) => b.branchId === branchId)
     return { stockLevel: bd?.stockLevel ?? 0, buyingPrice: bd?.buyingPrice ?? 0 }
+  }
+
+  // ── Pool mode helpers ────────────────────────────────────────────────────────
+  function getPoolStock(product: Product) {
+    const entry = product.pooledStock.find((p) => p.branchId === branchId)
+    return { stockQty: entry?.stockQty ?? 0, buyingPrice: entry?.buyingPrice ?? 0 }
   }
 
   function rowKey(productId: string, variantId: string) {
@@ -72,24 +88,15 @@ export default function StockManager({ branchId }: { branchId: string }) {
     setRows((prev) => ({ ...prev, [key]: { ...getRow(key, bpHint), ...prev[key], ...patch } }))
   }
 
+  // ── Normal mode save ─────────────────────────────────────────────────────────
   async function handleSave(product: Product, variant: Variant) {
     const { stockLevel, buyingPrice: currentBuyingPrice } = getStock(product, variant.variantId)
     const key = rowKey(product._id, variant.variantId)
     const row = rows[key] ?? getRow(key, currentBuyingPrice)
 
     const qty = Number(row.quantity)
-    if (!qty || qty <= 0) {
-      toast.error('কত পেলেন সেটা লিখুন')
-      return
-    }
-    if (currentBuyingPrice === 0 && row.buyingPrice === '') {
-      toast.error('ক্রয় মূল্য দিন')
-      return
-    }
-    if (!row.recordAsPurchase) {
-      toast.error('দোকানের টাকায় কিনেছি সিলেক্ট করুন')
-      return
-    }
+    if (!qty || qty <= 0) { toast.error('কত পেলেন সেটা লিখুন'); return }
+    if (currentBuyingPrice === 0 && row.buyingPrice === '') { toast.error('ক্রয় মূল্য দিন'); return }
 
     setRow(key, { saving: true })
 
@@ -139,18 +146,63 @@ export default function StockManager({ branchId }: { branchId: string }) {
       })
     )
 
-    toast.success(
-      procurementId
-        ? `স্টক আপডেট ও কেনা রেকর্ড — এখন ${newStock}`
-        : `স্টক আপডেট — এখন ${newStock}`
+    toast.success(procurementId ? `স্টক আপডেট ও কেনা রেকর্ড — এখন ${newStock}` : `স্টক আপডেট — এখন ${newStock}`)
+    setRows((prev) => { const next = { ...prev }; delete next[key]; return next })
+  }
+
+  // ── Pool mode save ───────────────────────────────────────────────────────────
+  async function handlePoolSave(product: Product) {
+    const { stockQty: currentQty, buyingPrice: currentBp } = getPoolStock(product)
+    const key = rowKey(product._id, '__pool__')
+    const row = rows[key] ?? getRow(key, currentBp)
+
+    const qty = Number(row.quantity)
+    if (!qty || qty <= 0) { toast.error('কত পেলেন সেটা লিখুন'); return }
+
+    setRow(key, { saving: true })
+
+    const res = await fetch('/api/stock-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        branchId,
+        productId: product._id,
+        variantId: '__pool__',
+        action: 'add',
+        quantity: qty,
+        buyingPrice: row.buyingPrice !== '' ? Number(row.buyingPrice) : undefined,
+        recordAsPurchase: row.recordAsPurchase,
+      }),
+    })
+
+    if (!res.ok) {
+      const err = await res.json()
+      toast.error(err.error ?? 'পুল স্টক আপডেট হয়নি')
+      setRow(key, { saving: false })
+      return
+    }
+
+    const { stockLevel: newPool, procurementId } = await res.json()
+
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p._id !== product._id) return p
+        const hasEntry = p.pooledStock.some((e) => e.branchId === branchId)
+        return {
+          ...p,
+          pooledStock: hasEntry
+            ? p.pooledStock.map((e) =>
+                e.branchId === branchId
+                  ? { ...e, stockQty: newPool, buyingPrice: row.buyingPrice !== '' ? Number(row.buyingPrice) : e.buyingPrice }
+                  : e
+              )
+            : [...p.pooledStock, { branchId, stockQty: newPool, buyingPrice: Number(row.buyingPrice) || 0 }],
+        }
+      })
     )
 
-    // Reset this row
-    setRows((prev) => {
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
+    toast.success(procurementId ? `পুল স্টক আপডেট ও কেনা রেকর্ড — এখন ${newPool} ${product.unitType === 'Liquid' ? 'L' : 'kg'}` : `পুল স্টক আপডেট — এখন ${newPool} ${product.unitType === 'Liquid' ? 'L' : 'kg'}`)
+    setRows((prev) => { const next = { ...prev }; delete next[key]; return next })
   }
 
   if (loading) {
@@ -180,20 +232,110 @@ export default function StockManager({ branchId }: { branchId: string }) {
 
       {expanded && (
         <div className="divide-y divide-gray-100">
-          {products.map((product) =>
-            product.variants.map((variant) => {
+          {products.map((product) => {
+            const unit = product.unitType === 'Liquid' ? 'L' : product.unitType === 'Weight' ? 'kg' : 'পিস'
+
+            // ── Pool product row ─────────────────────────────────────────────
+            if (product.isPooled) {
+              const { stockQty, buyingPrice } = getPoolStock(product)
+              const poolKey = rowKey(product._id, '__pool__')
+              const row = getRow(poolKey, buyingPrice)
+              const newTotal = row.quantity ? stockQty + Number(row.quantity) : null
+
+              return (
+                <div key={product._id} className="px-5 py-4 space-y-3 bg-amber-50/40">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-base font-black text-gray-800">{product.name}</p>
+                        <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">Pool</span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        {product.variants.map(v => v.sizeLabel ?? v.variantId).join(' · ')}
+                        {' · '}
+                        <span className={`font-bold ${stockQty <= 0 ? 'text-red-500' : stockQty < 5 ? 'text-amber-600' : 'text-green-600'}`}>
+                          ট্যাংক: {stockQty} {unit}
+                        </span>
+                        {buyingPrice > 0 && (
+                          <span className="text-gray-400 ml-2">ক্রয়: ৳{buyingPrice}/{unit}</span>
+                        )}
+                      </p>
+                    </div>
+                    {newTotal !== null && (
+                      <span className="text-sm font-bold text-amber-700 bg-amber-100 px-3 py-1 rounded-xl">
+                        → {newTotal} {unit}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div className="flex-1 min-w-[80px]">
+                      <label className="text-xs font-bold text-gray-500 block mb-1">কত {unit} পেলেন</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        className="w-full border-2 border-amber-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-amber-500 placeholder:text-gray-300"
+                        placeholder="০"
+                        value={row.quantity}
+                        onChange={(e) => setRow(poolKey, { quantity: e.target.value }, buyingPrice)}
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-[90px]">
+                      <label className={`text-xs font-bold block mb-1 ${buyingPrice === 0 ? 'text-amber-600' : 'text-gray-500'}`}>
+                        {buyingPrice > 0 ? `ক্রয় মূল্য (৳${buyingPrice}/${unit})` : `ক্রয় মূল্য ৳/${unit}`}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="w-full border-2 border-gray-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-amber-400 placeholder:text-gray-300"
+                        placeholder={buyingPrice > 0 ? `${buyingPrice}` : 'দাম'}
+                        value={row.buyingPrice}
+                        onChange={(e) => setRow(poolKey, { buyingPrice: e.target.value }, buyingPrice)}
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => handlePoolSave(product)}
+                      disabled={row.saving || !row.quantity}
+                      className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-base"
+                    >
+                      <Check className="w-4 h-4" />
+                      {row.saving ? 'সেভ...' : 'সেভ'}
+                    </button>
+                  </div>
+
+                  {row.quantity && (
+                    <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-green-700 pl-1">
+                      <input
+                        type="checkbox"
+                        checked={row.recordAsPurchase}
+                        onChange={(e) => setRow(poolKey, { recordAsPurchase: e.target.checked }, buyingPrice)}
+                        className="w-4 h-4 accent-green-600"
+                      />
+                      দোকানের টাকায় কিনেছি
+                      {row.recordAsPurchase && row.quantity && row.buyingPrice && (
+                        <span className="text-green-700 font-black ml-1">
+                          ৳{(Number(row.quantity) * Number(row.buyingPrice)).toLocaleString()}
+                        </span>
+                      )}
+                    </label>
+                  )}
+                </div>
+              )
+            }
+
+            // ── Normal product rows ──────────────────────────────────────────
+            return product.variants.map((variant) => {
               const { stockLevel, buyingPrice } = getStock(product, variant.variantId)
               const key = rowKey(product._id, variant.variantId)
               const row = getRow(key, buyingPrice)
-              const unit = product.unitType === 'Liquid' ? 'L' : product.unitType === 'Weight' ? 'kg' : 'পিস'
               const label = variant.sizeLabel ?? variant.variantId
-              const preview = row.quantity
-                ? `${stockLevel} + ${row.quantity} = ${stockLevel + Number(row.quantity)}`
-                : null
+              const preview = row.quantity ? `${stockLevel} + ${row.quantity} = ${stockLevel + Number(row.quantity)}` : null
 
               return (
                 <div key={key} className="px-5 py-4 space-y-3">
-                  {/* Product info */}
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-base font-black text-gray-800">{product.name}</p>
@@ -217,9 +359,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                     )}
                   </div>
 
-                  {/* Always-visible quick form */}
                   <div className="flex items-end gap-2 flex-wrap">
-                    {/* Qty */}
                     <div className="flex-1 min-w-[80px]">
                       <label className="text-xs font-bold text-gray-500 block mb-1">কত পেলেন</label>
                       <input
@@ -233,7 +373,6 @@ export default function StockManager({ branchId }: { branchId: string }) {
                       />
                     </div>
 
-                    {/* Buying price — always show, required when not set */}
                     <div className="flex-1 min-w-[90px]">
                       <label className={`text-xs font-bold block mb-1 ${buyingPrice === 0 ? 'text-amber-600' : 'text-gray-500'}`}>
                         {buyingPrice > 0 ? `ক্রয় মূল্য (৳${buyingPrice})` : 'ক্রয় মূল্য ৳ *'}
@@ -252,7 +391,6 @@ export default function StockManager({ branchId }: { branchId: string }) {
                       />
                     </div>
 
-                    {/* Save button */}
                     <button
                       onClick={() => handleSave(product, variant)}
                       disabled={row.saving || !row.quantity}
@@ -282,7 +420,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                 </div>
               )
             })
-          )}
+          })}
         </div>
       )}
     </div>

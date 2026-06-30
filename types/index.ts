@@ -14,7 +14,7 @@ export type TransactionType =
   | 'Expense'
   | 'Procurement'
 
-export type DayStatus = 'Open' | 'Locked'
+export type DayStatus = 'Pending' | 'Open' | 'Locked'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 
@@ -92,7 +92,14 @@ export interface IBranchDetail {
 export interface IVariant {
   variantId: string
   sizeLabel?: string
+  portionSize?: number
   branchDetails: IBranchDetail[]
+}
+
+export interface IPooledStockEntry {
+  branchId: Types.ObjectId
+  stockQty: number
+  buyingPrice: number
 }
 
 export interface IProduct {
@@ -101,7 +108,9 @@ export interface IProduct {
   category?: string
   unitType: UnitType
   isOpenLoose: boolean
+  isPooled: boolean
   variants: IVariant[]
+  pooledStock: IPooledStockEntry[]
   createdAt: Date
   updatedAt: Date
 }

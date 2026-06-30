@@ -56,7 +56,15 @@ interface ClosingRecord {
 
 interface BranchDetail { branchId: string; stockLevel: number }
 interface Variant { variantId: string; sizeLabel?: string; branchDetails: BranchDetail[] }
-interface Product { _id: string; name: string; unitType: string; variants: Variant[] }
+interface PooledStockEntry { branchId: string; stockQty: number }
+interface Product {
+  _id: string
+  name: string
+  unitType: string
+  isPooled?: boolean
+  pooledStock?: PooledStockEntry[]
+  variants: Variant[]
+}
 
 interface CustomerDue {
   _id: string
@@ -147,7 +155,12 @@ export default function BranchReport({ role, branches, assignedBranches, default
 
   const getSystemStock = (productId: string, variantId: string) => {
     const p = products.find((x) => x._id === productId)
-    const v = p?.variants.find((x) => x.variantId === variantId)
+    if (!p) return 0
+    // Pooled product: pull from pooledStock tank
+    if (p.isPooled && variantId === 'pooled') {
+      return p.pooledStock?.find((b) => b.branchId === branchId)?.stockQty ?? 0
+    }
+    const v = p.variants.find((x) => x.variantId === variantId)
     return v?.branchDetails.find((b) => b.branchId === branchId)?.stockLevel ?? 0
   }
 
@@ -155,6 +168,7 @@ export default function BranchReport({ role, branches, assignedBranches, default
     p.unitType === 'Liquid' ? 'L' : p.unitType === 'Weight' ? 'kg' : 'pcs'
 
   const st = closing?.mathematicalSystemTotals
+  const isPending = !closing || closing.status === 'Pending'
   const nightCash = closing?.nightCashCounted ?? null
   const cashGap = nightCash != null && st ? nightCash - st.expectedDrawerCash : null
   const cashGapAbs = cashGap !== null ? Math.abs(cashGap) : null
@@ -222,7 +236,27 @@ export default function BranchReport({ role, branches, assignedBranches, default
         <div className="text-center py-20 text-slate-400">Loading…</div>
       ) : (
         <>
-          {/* ── Section 1: Today's Sales ── */}
+          {/* ── Section 1: Day Status Banner (only when Pending) ── */}
+          {isPending && (
+            <section>
+              <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 p-4 flex items-center gap-3">
+                <Clock className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                <div>
+                  <p className="text-amber-400 font-bold text-sm">
+                    {isToday ? 'Day has not been started yet' : 'No record for this date'}
+                  </p>
+                  <p className="text-slate-500 text-xs">
+                    {isToday
+                      ? 'The manager has not clicked "Start Day" on the POS terminal. Sales are blocked.'
+                      : `No DailyClosing record found for ${date}.`}
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ── Section 2: Today's Sales ── */}
+          {!isPending && (
           <section>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">
               {isToday ? "Today's Sales" : `${date} — Sales`}
@@ -250,8 +284,10 @@ export default function BranchReport({ role, branches, assignedBranches, default
               />
             </div>
           </section>
+          )}
 
-          {/* ── Section 2: Cash Gap ── */}
+          {/* ── Section 3: Cash Check ── */}
+          {!isPending && (
           <section>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">Cash Check</p>
             <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-5">
@@ -352,8 +388,10 @@ export default function BranchReport({ role, branches, assignedBranches, default
               )}
             </div>
           </section>
+          )}
 
-          {/* ── Section 3: Stock Status ── */}
+          {/* ── Section 4: Stock Status ── */}
+          {!isPending && (
           <section>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">Stock Status</p>
             <div className="rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
@@ -371,23 +409,29 @@ export default function BranchReport({ role, branches, assignedBranches, default
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map((product) =>
-                      product.variants.map((variant) => {
-                        const sysQty = getSystemStock(product._id, variant.variantId)
+                    {products.flatMap((product) => {
+                      // Pooled products are stored as a single 'pooled' variantId
+                      const rows = product.isPooled
+                        ? [{ variantId: 'pooled', sizeLabel: 'Total Volume' }]
+                        : product.variants.map((v) => ({ variantId: v.variantId, sizeLabel: v.sizeLabel }))
+
+                      return rows.map((row) => {
+                        const sysQty = getSystemStock(product._id, row.variantId)
                         const u = unit(product)
                         const physEntry = closing?.physicalStock?.find(
-                          (e) => e.productId === product._id && e.variantId === variant.variantId
+                          (e) => e.productId === product._id && e.variantId === row.variantId
                         )
                         const gap = physEntry ? physEntry.physicalQty - physEntry.systemQty : null
                         const reasonEntry = closing?.stockCheckReasons?.find(
-                          (r) => r.productId === product._id && r.variantId === variant.variantId
+                          (r) => r.productId === product._id && r.variantId === row.variantId
                         )
 
                         return (
-                          <tr key={`${product._id}:${variant.variantId}`} className="border-b border-slate-800 hover:bg-slate-800/30">
+                          <tr key={`${product._id}:${row.variantId}`} className="border-b border-slate-800 hover:bg-slate-800/30">
                             <td className="px-4 py-3 text-slate-200 font-medium">
                               {product.name}
-                              {variant.sizeLabel && <span className="text-slate-500 text-xs ml-1">{variant.sizeLabel}</span>}
+                              {row.sizeLabel && <span className="text-slate-500 text-xs ml-1">{row.sizeLabel}</span>}
+                              {product.isPooled && <span className="ml-2 text-[10px] bg-amber-900/40 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded uppercase font-bold">Pool</span>}
                             </td>
                             <td className="px-4 py-3 text-right text-slate-200 font-bold">
                               {sysQty} {u}
@@ -423,12 +467,13 @@ export default function BranchReport({ role, branches, assignedBranches, default
                           </tr>
                         )
                       })
-                    )}
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
           </section>
+          )}
 
           {/* ── Section 4: Supplier Orders ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -588,7 +633,6 @@ export default function BranchReport({ role, branches, assignedBranches, default
                           (s, e) => s + (e.physicalQty - e.systemQty), 0
                         )
                         const hasStockCount = (h.physicalStock ?? []).length > 0
-                        const isLocked = h.status === 'Locked'
 
                         return (
                           <tr key={h._id} className="border-b border-slate-800 hover:bg-slate-800/30">
@@ -638,9 +682,13 @@ export default function BranchReport({ role, branches, assignedBranches, default
                               )}
                             </td>
                             <td className="px-4 py-3 text-center">
-                              {isLocked ? (
+                              {h.status === 'Locked' ? (
                                 <span className="text-xs bg-green-900/40 border border-green-800/40 text-green-400 px-2 py-0.5 rounded-full font-medium">
                                   Locked
+                                </span>
+                              ) : h.status === 'Pending' ? (
+                                <span className="text-xs bg-slate-800 border border-slate-700 text-slate-500 px-2 py-0.5 rounded-full font-medium">
+                                  Pending
                                 </span>
                               ) : (
                                 <span className="text-xs bg-amber-900/40 border border-amber-800/40 text-amber-400 px-2 py-0.5 rounded-full font-medium">

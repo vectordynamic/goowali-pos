@@ -77,33 +77,29 @@ export async function GET(req: NextRequest) {
 
   await dbConnect()
 
-  // Opening cash = yesterday's night cash count (automatic carryover, no manual input needed)
   const yesterday = await DailyClosing.findOne({ branchId, date: prevDate(date) })
   const openingCash = yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0
-
-  const systemTotals = await computeSystemTotals(branchId, date, openingCash)
+  const yesterdayPreOrders = yesterday?.tomorrowPreOrders ?? []
 
   let closing = await DailyClosing.findOne({ branchId, date })
 
+  // ── Day not started yet: return a virtual Pending response (no DB write) ──
   if (!closing) {
-    closing = await DailyClosing.create({
-      branchId,
+    return NextResponse.json({
+      status: 'Pending',
       date,
-      status: 'Open',
-      mathematicalSystemTotals: systemTotals,
-      managerSubmittedTotals: { physicalCashCounted: 0, remainingMilkStock: 0 },
-      discrepancies: { cashShortage: 0, stockMismatch: 0 },
-      nightCashCounted: null,
-      physicalStock: [],
-      tomorrowPreOrders: [],
+      branchId,
+      openingCash,          // yesterday's closing cash, for display
+      yesterdayPreOrders,
     })
-  } else if (closing.status === 'Open') {
+  }
+
+  // ── Day is Open: refresh live system totals ──
+  if (closing.status === 'Open') {
+    const systemTotals = await computeSystemTotals(branchId, date, openingCash)
     closing.mathematicalSystemTotals = systemTotals as any
     await closing.save()
   }
-
-  // Also return yesterday's pre-orders (for "what was expected today" comparison)
-  const yesterdayPreOrders = yesterday?.tomorrowPreOrders ?? []
 
   return NextResponse.json({ ...closing.toObject(), yesterdayPreOrders })
 }
@@ -126,6 +122,40 @@ export async function PATCH(req: NextRequest) {
 
   await dbConnect()
   const targetDate = date ?? today()
+
+  // ── Start Day ─────────────────────────────────────────────────────────────
+  if (action === 'startDay') {
+    const existing = await DailyClosing.findOne({ branchId, date: targetDate })
+    if (existing && existing.status !== 'Pending') {
+      return NextResponse.json(
+        { error: 'Day already started', status: existing.status },
+        { status: 409 }
+      )
+    }
+
+    // Carry opening cash from yesterday
+    const yesterday = await DailyClosing.findOne({ branchId, date: prevDate(targetDate) })
+    const openingCash = yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0
+    const systemTotals = await computeSystemTotals(branchId, targetDate, openingCash)
+
+    const closing = await DailyClosing.findOneAndUpdate(
+      { branchId, date: targetDate },
+      {
+        $set: {
+          status: 'Open',
+          mathematicalSystemTotals: systemTotals,
+          managerSubmittedTotals: { physicalCashCounted: 0, remainingMilkStock: 0 },
+          discrepancies: { cashShortage: 0, stockMismatch: 0 },
+          nightCashCounted: null,
+          physicalStock: [],
+          stockCheckReasons: [],
+          tomorrowPreOrders: [],
+        }
+      },
+      { new: true, upsert: true }
+    )
+    return NextResponse.json(closing)
+  }
 
   if (action === 'nightCash') {
     const nightCash = Number(body.nightCash ?? 0)

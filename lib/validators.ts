@@ -101,7 +101,14 @@ export const VariantSchema = z.object({
     .max(50)
     .regex(/^[a-z0-9_]+$/, 'Variant ID: lowercase letters, numbers, underscores only'),
   sizeLabel: z.string().trim().max(50).optional(),
+  portionSize: z.number().min(0).default(0),
   branchDetails: z.array(BranchDetailSchema).default([])
+})
+
+export const PooledStockEntrySchema = z.object({
+  branchId: objectId,
+  stockQty: z.number().min(0).default(0),
+  buyingPrice: z.number().min(0).default(0)
 })
 
 export const ProductCreateSchema = z.object({
@@ -110,7 +117,9 @@ export const ProductCreateSchema = z.object({
   category: z.string().trim().max(100).optional(),
   unitType: z.enum(['Liquid', 'Weight', 'Fixed']),
   isOpenLoose: z.boolean().default(false),
-  variants: z.array(VariantSchema).default([])
+  isPooled: z.boolean().default(false),
+  variants: z.array(VariantSchema).default([]),
+  pooledStock: z.array(PooledStockEntrySchema).default([])
 })
 
 export const ProductUpdateSchema = ProductCreateSchema.partial()

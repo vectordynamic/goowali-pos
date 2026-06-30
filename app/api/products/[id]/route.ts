@@ -3,11 +3,19 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
 import Product from '@/models/Product'
-import { validate, ProductUpdateSchema, BranchPricingSchema, VariantSchema, objectId } from '@/lib/validators'
+import {
+  validate,
+  ProductUpdateSchema,
+  BranchPricingSchema,
+  VariantSchema,
+  objectId,
+  PooledStockEntrySchema,
+} from '@/lib/validators'
 import { assertBranchAccess, branchDenied } from '@/lib/utils'
 import type { Role } from '@/types'
 
 // PATCH /api/products/[id]
+// Handles: pushVariant | general product field update
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,9 +32,9 @@ export async function PATCH(
 
   const body = await req.json()
 
-  // Variant push — sent as { pushVariant: { variantId, sizeLabel?, branchDetails? } }
+  // Variant push — sent as { pushVariant: { variantId, sizeLabel?, portionSize?, branchDetails? } }
   if (body.pushVariant !== undefined) {
-    const vParsed = VariantSchema.safeParse({ branchDetails: [], ...body.pushVariant })
+    const vParsed = VariantSchema.safeParse({ branchDetails: [], portionSize: 0, ...body.pushVariant })
     if (!vParsed.success) {
       return NextResponse.json(
         { error: 'Invalid variant', errors: vParsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })) },
@@ -59,7 +67,10 @@ export async function PATCH(
   return NextResponse.json(product)
 }
 
-// PUT /api/products/[id] — set branch pricing for a variant
+// PUT /api/products/[id]
+// - Pooled product + setPooledStock:true → update pool tank (branchId, stockQty, buyingPrice)
+// - Pooled product, no flag            → update variant mrpPrice only (stockLevel ignored)
+// - Normal product                     → update variant branchDetails (buyingPrice, mrpPrice, stockLevel)
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -75,12 +86,41 @@ export async function PUT(
   if (!idCheck.success) return NextResponse.json({ error: 'Invalid product ID' }, { status: 400 })
 
   const body = await req.json()
+
+  // ── Pooled stock set ────────────────────────────────────────────────────────
+  if (body.setPooledStock === true) {
+    const parsed = PooledStockEntrySchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid pool stock data', errors: parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })) },
+        { status: 400 }
+      )
+    }
+    const { branchId, stockQty, buyingPrice } = parsed.data
+    if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
+
+    await dbConnect()
+    const product = await Product.findById(id)
+    if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+    if (!product.isPooled) return NextResponse.json({ error: 'Product is not in pool mode' }, { status: 400 })
+
+    const existingPool = product.pooledStock.find((p: any) => p.branchId.toString() === branchId)
+    if (existingPool) {
+      existingPool.stockQty = stockQty
+      if (buyingPrice !== undefined) existingPool.buyingPrice = buyingPrice
+    } else {
+      product.pooledStock.push({ branchId, stockQty, buyingPrice: buyingPrice ?? 0 })
+    }
+    await product.save()
+    return NextResponse.json(product)
+  }
+
+  // ── Variant pricing / stock set ─────────────────────────────────────────────
   const parsed = validate(BranchPricingSchema, body)
   if (!parsed.success) return parsed.response
 
   const { variantId, branchId, buyingPrice, mrpPrice, stockLevel } = parsed.data
 
-  // BRANCH_ADMIN can only set stock for their own branches — 404 to prevent enumeration
   if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
 
   await dbConnect()
@@ -94,9 +134,15 @@ export async function PUT(
   if (existing) {
     if (buyingPrice !== undefined) existing.buyingPrice = buyingPrice
     if (mrpPrice !== undefined) existing.mrpPrice = mrpPrice
-    if (stockLevel !== undefined) existing.stockLevel = stockLevel
+    // stockLevel ignored for pooled products — pool tank is the source of truth
+    if (stockLevel !== undefined && !product.isPooled) existing.stockLevel = stockLevel
   } else {
-    variant.branchDetails.push({ branchId, buyingPrice, mrpPrice: mrpPrice ?? 0, stockLevel: stockLevel ?? 0 })
+    variant.branchDetails.push({
+      branchId,
+      buyingPrice: buyingPrice ?? 0,
+      mrpPrice: mrpPrice ?? 0,
+      stockLevel: product.isPooled ? 0 : (stockLevel ?? 0),
+    })
   }
 
   await product.save()

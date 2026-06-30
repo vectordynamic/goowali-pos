@@ -49,7 +49,7 @@ const DailyClosingSchema = new Schema<DailyClosingDocument>(
   {
     branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
     date: { type: String, required: true },
-    status: { type: String, enum: ['Open', 'Locked'], default: 'Open' },
+    status: { type: String, enum: ['Pending', 'Open', 'Locked'], default: 'Pending' },
 
     mathematicalSystemTotals: {
       openingCash: { type: Number, default: 0 },

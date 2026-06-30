@@ -28,6 +28,12 @@ export interface DailySummaryDocument extends Document {
 
   txCount: number
   updatedAt: Date
+
+  // Volume sold by unit type
+  liquidSold: number
+  weightSold: number
+  liquidProcured: number
+  weightProcured: number
 }
 
 const DailySummarySchema = new Schema<DailySummaryDocument>(

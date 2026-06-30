@@ -16,7 +16,14 @@ interface BranchDetail {
 interface Variant {
   variantId: string
   sizeLabel?: string
+  portionSize?: number
   branchDetails: BranchDetail[]
+}
+
+interface PooledStockEntry {
+  branchId: string
+  stockQty: number
+  buyingPrice: number
 }
 
 interface Product {
@@ -26,7 +33,9 @@ interface Product {
   category?: string
   unitType: string
   isOpenLoose: boolean
+  isPooled: boolean
   variants: Variant[]
+  pooledStock: PooledStockEntry[]
 }
 
 interface Branch {
@@ -49,8 +58,10 @@ export default function ProductManager({ role, assignedBranches }: Props) {
   const [branchDetailModal, setBranchDetailModal] = useState<{
     productId: string
     variantId: string
+    isPooled: boolean
   } | null>(null)
-  const [variantModal, setVariantModal] = useState<string | null>(null)
+  const [variantModal, setVariantModal] = useState<{ productId: string; isPooled: boolean } | null>(null)
+  const [pooledStockModal, setPooledStockModal] = useState<string | null>(null)
 
   function load() {
     setLoading(true)
@@ -139,6 +150,7 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                   <p className="text-xs text-slate-500">
                     {product.unitType}
                     {product.isOpenLoose && ' · Loose'}
+                    {product.isPooled && <span className="ml-1 text-amber-400 font-semibold">· Pool</span>}
                     {product.category && ` · ${product.category}`}
                     {' · '}
                     {product.variants.length} variant{product.variants.length !== 1 ? 's' : ''}
@@ -169,12 +181,51 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                   <div className="flex items-center justify-between mt-3 mb-2">
                     <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Variants & Branch Stock</span>
                     <button
-                      onClick={() => setVariantModal(product._id)}
+                      onClick={() => setVariantModal({ productId: product._id, isPooled: product.isPooled })}
                       className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                     >
                       + Add variant
                     </button>
                   </div>
+
+                  {/* Pooled product: show pool tank stock */}
+                  {product.isPooled && (
+                    <div className="mb-3 p-3 rounded-lg bg-amber-900/10 border border-amber-800/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-amber-400 uppercase tracking-wider">Pool Tank (Shared Stock)</span>
+                        <button
+                          onClick={() => setPooledStockModal(product._id)}
+                          className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                        >
+                          + Set pool stock
+                        </button>
+                      </div>
+                      {product.pooledStock.length === 0 ? (
+                        <p className="text-xs text-slate-600 italic">No pool stock set for any branch</p>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-slate-500 border-b border-slate-800">
+                              <th className="text-left py-1 font-medium">Branch</th>
+                              <th className="text-right py-1 font-medium">Pool Stock</th>
+                              <th className="text-right py-1 font-medium">Buy ৳/unit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {product.pooledStock.map((ps) => (
+                              <tr key={String(ps.branchId)} className="border-b border-slate-800/40">
+                                <td className="py-1 text-slate-300">{branchName(String(ps.branchId))}</td>
+                                <td className="py-1 text-right text-amber-400 font-bold">
+                                  {ps.stockQty} {product.unitType === 'Liquid' ? 'L' : 'kg'}
+                                </td>
+                                <td className="py-1 text-right text-rose-400">৳{ps.buyingPrice}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
 
                   {product.variants.length === 0 ? (
                     <p className="text-xs text-slate-600 italic py-2">No variants yet</p>
@@ -188,22 +239,27 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                           {variant.sizeLabel && (
                             <span className="text-xs text-slate-400">{variant.sizeLabel}</span>
                           )}
+                          {product.isPooled && variant.portionSize !== undefined && variant.portionSize > 0 && (
+                            <span className="text-xs text-amber-500 bg-amber-900/20 px-1.5 py-0.5 rounded">
+                              {variant.portionSize} {product.unitType === 'Liquid' ? 'L' : 'kg'} each
+                            </span>
+                          )}
                           <button
-                            onClick={() => setBranchDetailModal({ productId: product._id, variantId: variant.variantId })}
+                            onClick={() => setBranchDetailModal({ productId: product._id, variantId: variant.variantId, isPooled: product.isPooled })}
                             className="ml-auto text-xs text-blue-400 hover:text-blue-300 transition-colors"
                           >
-                            + Set stock
+                            + Set {product.isPooled ? 'price' : 'stock'}
                           </button>
                         </div>
                         {variant.branchDetails.length === 0 ? (
-                          <p className="text-xs text-slate-600 italic">No branch stock set</p>
+                          <p className="text-xs text-slate-600 italic">No branch {product.isPooled ? 'price' : 'stock'} set</p>
                         ) : (
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="text-slate-500 border-b border-slate-800">
                                 <th className="text-left py-1 font-medium">Branch</th>
-                                <th className="text-right py-1 font-medium">Stock</th>
-                                <th className="text-right py-1 font-medium">Buy ৳</th>
+                                {!product.isPooled && <th className="text-right py-1 font-medium">Stock</th>}
+                                {!product.isPooled && <th className="text-right py-1 font-medium">Buy ৳</th>}
                                 <th className="text-right py-1 font-medium">MRP ৳</th>
                               </tr>
                             </thead>
@@ -211,8 +267,8 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                               {variant.branchDetails.map((bd) => (
                                 <tr key={String(bd.branchId)} className="border-b border-slate-800/40">
                                   <td className="py-1 text-slate-300">{branchName(String(bd.branchId))}</td>
-                                  <td className="py-1 text-right text-slate-300">{bd.stockLevel}</td>
-                                  <td className="py-1 text-right text-rose-400">৳{bd.buyingPrice}</td>
+                                  {!product.isPooled && <td className="py-1 text-right text-slate-300">{bd.stockLevel}</td>}
+                                  {!product.isPooled && <td className="py-1 text-right text-rose-400">৳{bd.buyingPrice}</td>}
                                   <td className="py-1 text-right text-emerald-400">৳{bd.mrpPrice ?? 0}</td>
                                 </tr>
                               ))}
@@ -239,7 +295,8 @@ export default function ProductManager({ role, assignedBranches }: Props) {
 
       {variantModal && (
         <VariantModal
-          productId={variantModal}
+          productId={variantModal.productId}
+          isPooled={variantModal.isPooled}
           onClose={() => setVariantModal(null)}
           onSave={() => { setVariantModal(null); load() }}
         />
@@ -249,9 +306,19 @@ export default function ProductManager({ role, assignedBranches }: Props) {
         <BranchStockModal
           productId={branchDetailModal.productId}
           variantId={branchDetailModal.variantId}
+          isPooled={branchDetailModal.isPooled}
           branches={branches}
           onClose={() => setBranchDetailModal(null)}
           onSave={() => { setBranchDetailModal(null); load() }}
+        />
+      )}
+
+      {pooledStockModal && (
+        <PooledStockModal
+          productId={pooledStockModal}
+          branches={branches}
+          onClose={() => setPooledStockModal(null)}
+          onSave={() => { setPooledStockModal(null); load() }}
         />
       )}
 
@@ -278,13 +345,14 @@ function ProductModal({ product, onClose, onSave }: {
   const [category, setCategory] = useState(product?.category ?? '')
   const [unitType, setUnitType] = useState(product?.unitType ?? 'Fixed')
   const [isOpenLoose, setIsOpenLoose] = useState(product?.isOpenLoose ?? false)
+  const [isPooled, setIsPooled] = useState(product?.isPooled ?? false)
   const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
 
-    const payload = { productCode: productCode.trim().toUpperCase(), name, category, unitType, isOpenLoose }
+    const payload = { productCode: productCode.trim().toUpperCase(), name, category, unitType, isOpenLoose, isPooled }
     const res = product
       ? await fetch(`/api/products/${product._id}`, {
           method: 'PATCH',
@@ -369,6 +437,20 @@ function ProductModal({ product, onClose, onSave }: {
             />
             <span className="text-sm text-slate-300">Open / Loose (allows decimal quantity)</span>
           </label>
+          {(unitType === 'Liquid' || unitType === 'Weight') && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPooled}
+                onChange={(e) => setIsPooled(e.target.checked)}
+                disabled={!!product}
+                className="accent-amber-500"
+              />
+              <span className="text-sm text-amber-300">
+                Pool Mode — shared tank, variants draw from it
+              </span>
+            </label>
+          )}
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button type="submit" disabled={submitting} className="btn-primary flex-1">
@@ -381,13 +463,15 @@ function ProductModal({ product, onClose, onSave }: {
   )
 }
 
-function VariantModal({ productId, onClose, onSave }: {
+function VariantModal({ productId, isPooled, onClose, onSave }: {
   productId: string
+  isPooled?: boolean
   onClose: () => void
   onSave: () => void
 }) {
   const [variantId, setVariantId] = useState('')
   const [sizeLabel, setSizeLabel] = useState('')
+  const [portionSize, setPortionSize] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -398,7 +482,12 @@ function VariantModal({ productId, onClose, onSave }: {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        pushVariant: { variantId, sizeLabel, branchDetails: [] }
+        pushVariant: {
+          variantId,
+          sizeLabel,
+          portionSize: portionSize ? Number(portionSize) : 0,
+          branchDetails: []
+        }
       })
     })
 
@@ -427,7 +516,7 @@ function VariantModal({ productId, onClose, onSave }: {
               value={variantId}
               onChange={(e) => setVariantId(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
               required
-              placeholder="e.g. milk_1L"
+              placeholder="e.g. milk_1l"
             />
           </div>
           <div>
@@ -439,6 +528,21 @@ function VariantModal({ productId, onClose, onSave }: {
               placeholder="e.g. 1 Litre"
             />
           </div>
+          {isPooled && (
+            <div>
+              <label className="text-xs text-amber-400 block mb-1.5">Portion Size * <span className="text-slate-500">(কতটুকু pool থেকে নেবে)</span></label>
+              <input
+                type="number"
+                className="input-base"
+                value={portionSize}
+                onChange={(e) => setPortionSize(e.target.value)}
+                required={isPooled}
+                min="0"
+                step="0.001"
+                placeholder="e.g. 0.5 for 500ml, 1 for 1L"
+              />
+            </div>
+          )}
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button type="submit" disabled={submitting} className="btn-primary flex-1">
@@ -451,9 +555,10 @@ function VariantModal({ productId, onClose, onSave }: {
   )
 }
 
-function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
+function BranchStockModal({ productId, variantId, isPooled, branches, onClose, onSave }: {
   productId: string
   variantId: string
+  isPooled: boolean
   branches: Branch[]
   onClose: () => void
   onSave: () => void
@@ -474,20 +579,21 @@ function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
       body: JSON.stringify({
         variantId,
         branchId,
-        buyingPrice: Number(buyingPrice),
+        // pooled: only mrpPrice matters; buying/stock live on pool tank
+        buyingPrice: isPooled ? 0 : Number(buyingPrice),
         mrpPrice: mrpPrice ? Number(mrpPrice) : undefined,
-        stockLevel: Number(stockLevel)
+        stockLevel: isPooled ? 0 : Number(stockLevel)
       })
     })
 
     setSubmitting(false)
     if (!res.ok) {
       const err = await res.json()
-      toast.error(err.error ?? 'Failed to set stock')
+      toast.error(err.error ?? 'Failed to set price')
       return
     }
     const branch = branches.find((b) => b._id === branchId)
-    toast.success(`Stock set for ${branch?.name ?? 'branch'}`)
+    toast.success(`Price set for ${branch?.name ?? 'branch'}`)
     onSave()
   }
 
@@ -507,7 +613,9 @@ function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
       <div className="card w-full max-w-sm">
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div>
-            <h2 className="text-base font-semibold text-slate-100">Set Branch Stock</h2>
+            <h2 className="text-base font-semibold text-slate-100">
+              {isPooled ? 'Set Selling Price' : 'Set Branch Stock'}
+            </h2>
             <p className="text-xs text-slate-500 mt-0.5 font-mono">{variantId}</p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
@@ -519,7 +627,7 @@ function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
               {branches.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          {!isPooled && (
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">Buying Price ৳ *</label>
               <input
@@ -532,33 +640,129 @@ function BranchStockModal({ productId, variantId, branches, onClose, onSave }: {
                 placeholder="0"
               />
             </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1.5">MRP / Selling Price ৳ *</label>
-              <input
-                type="number"
-                className="input-base"
-                value={mrpPrice}
-                onChange={(e) => setMrpPrice(e.target.value)}
-                required
-                min="0"
-                placeholder="0"
-              />
-            </div>
-          </div>
+          )}
           <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Stock Level</label>
+            <label className="text-xs text-slate-400 block mb-1.5">MRP / Selling Price ৳ *</label>
             <input
               type="number"
               className="input-base"
-              value={stockLevel}
-              onChange={(e) => setStockLevel(e.target.value)}
+              value={mrpPrice}
+              onChange={(e) => setMrpPrice(e.target.value)}
+              required
               min="0"
+              placeholder="0"
+            />
+          </div>
+          {!isPooled && (
+            <div>
+              <label className="text-xs text-slate-400 block mb-1.5">Stock Level</label>
+              <input
+                type="number"
+                className="input-base"
+                value={stockLevel}
+                onChange={(e) => setStockLevel(e.target.value)}
+                min="0"
+              />
+            </div>
+          )}
+          {isPooled && (
+            <p className="text-xs text-amber-500/70">⚠️ Stock for this pool product is managed via the Pool Tank — set it from the product page above.</p>
+          )}
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+            <button type="submit" disabled={submitting} className="btn-primary flex-1">
+              {submitting ? 'Saving…' : isPooled ? 'Set Price' : 'Set Stock'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function PooledStockModal({ productId, branches, onClose, onSave }: {
+  productId: string
+  branches: Branch[]
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [branchId, setBranchId] = useState(branches[0]?._id ?? '')
+  const [stockQty, setStockQty] = useState('')
+  const [buyingPrice, setBuyingPrice] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!stockQty) { toast.error('Stock quantity required'); return }
+    setSubmitting(true)
+
+    const res = await fetch(`/api/products/${productId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        setPooledStock: true,
+        branchId,
+        stockQty: Number(stockQty),
+        buyingPrice: buyingPrice ? Number(buyingPrice) : 0
+      })
+    })
+
+    setSubmitting(false)
+    if (!res.ok) {
+      const err = await res.json()
+      toast.error(err.error ?? 'Failed to set pool stock')
+      return
+    }
+    const branch = branches.find((b) => b._id === branchId)
+    toast.success(`Pool stock set for ${branch?.name ?? 'branch'}`)
+    onSave()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="card w-full max-w-sm">
+        <div className="flex items-center justify-between p-4 border-b border-slate-800">
+          <div>
+            <h2 className="text-base font-semibold text-amber-300">Set Pool Tank Stock</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Shared bulk stock for all variants</p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="text-xs text-slate-400 block mb-1.5">Branch</label>
+            <select className="input-base" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+              {branches.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-amber-400 block mb-1.5">Total Pool Stock (L / kg) *</label>
+            <input
+              type="number"
+              className="input-base"
+              value={stockQty}
+              onChange={(e) => setStockQty(e.target.value)}
+              required
+              min="0"
+              step="0.001"
+              placeholder="e.g. 100"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 block mb-1.5">Buying Price ৳ per unit (optional)</label>
+            <input
+              type="number"
+              className="input-base"
+              value={buyingPrice}
+              onChange={(e) => setBuyingPrice(e.target.value)}
+              min="0"
+              placeholder="e.g. 55 per litre"
             />
           </div>
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button type="submit" disabled={submitting} className="btn-primary flex-1">
-              {submitting ? 'Saving…' : 'Set Stock'}
+              {submitting ? 'Saving…' : 'Set Pool Stock'}
             </button>
           </div>
         </form>

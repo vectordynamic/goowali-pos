@@ -11,7 +11,14 @@ export interface BranchDetailDocument {
 export interface VariantDocument {
   variantId: string
   sizeLabel?: string
+  portionSize: number
   branchDetails: BranchDetailDocument[]
+}
+
+export interface PooledStockDocument {
+  branchId: Types.ObjectId
+  stockQty: number
+  buyingPrice: number
 }
 
 export interface ProductDocument extends Document {
@@ -20,7 +27,9 @@ export interface ProductDocument extends Document {
   category?: string
   unitType: UnitType
   isOpenLoose: boolean
+  isPooled: boolean
   variants: VariantDocument[]
+  pooledStock: PooledStockDocument[]
   createdAt: Date
   updatedAt: Date
 }
@@ -39,7 +48,17 @@ const VariantSchema = new Schema<VariantDocument>(
   {
     variantId: { type: String, required: true },
     sizeLabel: { type: String },
+    portionSize: { type: Number, default: 0 },
     branchDetails: { type: [BranchDetailSchema], default: [] }
+  },
+  { _id: false }
+)
+
+const PooledStockSchema = new Schema<PooledStockDocument>(
+  {
+    branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true },
+    stockQty: { type: Number, default: 0 },
+    buyingPrice: { type: Number, default: 0 }
   },
   { _id: false }
 )
@@ -55,7 +74,9 @@ const ProductSchema = new Schema<ProductDocument>(
       required: true
     },
     isOpenLoose: { type: Boolean, default: false },
-    variants: { type: [VariantSchema], default: [] }
+    isPooled: { type: Boolean, default: false },
+    variants: { type: [VariantSchema], default: [] },
+    pooledStock: { type: [PooledStockSchema], default: [] }
   },
   { timestamps: true }
 )
@@ -63,6 +84,7 @@ const ProductSchema = new Schema<ProductDocument>(
 ProductSchema.index({ productCode: 1 }, { unique: true })
 ProductSchema.index({ name: 1 })
 ProductSchema.index({ 'variants.branchDetails.branchId': 1 })
+ProductSchema.index({ 'pooledStock.branchId': 1 })
 
 const Product =
   mongoose.models.Product ||

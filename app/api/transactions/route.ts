@@ -5,6 +5,7 @@ import dbConnect from '@/lib/db'
 import Transaction from '@/models/Transaction'
 import Product from '@/models/Product'
 import Customer from '@/models/Customer'
+import DailyClosing from '@/models/DailyClosing'
 import {
   assertBranchAccess,
   branchDenied,
@@ -74,6 +75,21 @@ export async function POST(req: NextRequest) {
 
   await dbConnect()
 
+  // ── Day-status gate: block sales if day not Open ─────────────────────────────────
+  const dayClosing = await DailyClosing.findOne({ branchId, date: today() }).lean() as any
+  if (!dayClosing || dayClosing.status === 'Pending') {
+    return NextResponse.json(
+      { error: 'আজকের হিসাব শুরু হয়নি। বিক্রি শুরু করতে প্রথমে "দিন শুরু করুন" বাটন চাপুন।' },
+      { status: 403 }
+    )
+  }
+  if (dayClosing.status === 'Locked') {
+    return NextResponse.json(
+      { error: 'আজকের হিসাব বন্ধ করা হয়েছে। আর বিক্রি করা যাবে না।' },
+      { status: 403 }
+    )
+  }
+
   let subtotal = 0
   let totalCOGS = 0
   const processedItems = []
@@ -89,6 +105,52 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Variant ${item.variantId} not found` }, { status: 404 })
     }
 
+    // ── Pooled mode: deduct from the shared tank ──────────────────────────────
+    if (product.isPooled) {
+      const poolEntry = product.pooledStock.find(
+        (p: any) => p.branchId.toString() === branchId
+      )
+      if (!poolEntry) {
+        return NextResponse.json(
+          { error: `Pool stock not configured for ${product.name}` },
+          { status: 400 }
+        )
+      }
+
+      const portion = variant.portionSize ?? 1
+      const totalDeduction = portion * item.quantity
+
+      if (poolEntry.stockQty < totalDeduction) {
+        return NextResponse.json(
+          { error: `Insufficient pool stock for ${product.name} (need ${totalDeduction} ${product.unitType === 'Liquid' ? 'L' : 'kg'}, have ${poolEntry.stockQty})` },
+          { status: 400 }
+        )
+      }
+
+      // selling price from variant branchDetails
+      const branchDetail = variant.branchDetails.find(
+        (bd: any) => bd.branchId.toString() === branchId
+      )
+      const mrp = branchDetail?.mrpPrice > 0 ? branchDetail.mrpPrice : item.rateApplied
+      subtotal += mrp * item.quantity
+
+      // COGS from pool buying price × actual volume deducted
+      totalCOGS += (poolEntry.buyingPrice ?? 0) * totalDeduction
+
+      poolEntry.stockQty = Math.max(0, poolEntry.stockQty - totalDeduction)
+      await product.save()
+
+      processedItems.push({
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        rateApplied: mrp,
+        isCustomOverride: false
+      })
+      continue
+    }
+
+    // ── Normal mode: deduct from variant branchDetail ─────────────────────────
     const branchDetail = variant.branchDetails.find(
       (bd: any) => bd.branchId.toString() === branchId
     )

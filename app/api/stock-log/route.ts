@@ -11,7 +11,7 @@ import { objectId } from '@/lib/validators'
 const StockUpdateSchema = z.object({
   branchId: objectId,
   productId: objectId,
-  variantId: z.string().min(1),
+  variantId: z.string().min(1),  // '__pool__' accepted for pooled products
   action: z.enum(['add', 'set']),
   quantity: z.number().positive('Quantity must be positive'),
   buyingPrice: z.number().min(0).optional(),
@@ -46,10 +46,86 @@ export async function POST(req: NextRequest) {
   const { default: Product } = await import('@/models/Product')
   const { default: StockLog } = await import('@/models/StockLog')
 
-  const product = await Product.findOne({ _id: productId, 'variants.variantId': variantId })
-  if (!product) return NextResponse.json({ error: 'Product or variant not found' }, { status: 404 })
+  const product = await Product.findById(productId)
+  if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
 
-  const variant = product.variants.find((v: any) => v.variantId === variantId)
+  // ── Pooled mode: update shared tank ──────────────────────────────────────────
+  if (product.isPooled) {
+    if (variantId !== '__pool__') {
+      return NextResponse.json(
+        { error: 'Use variantId="__pool__" for pooled products' },
+        { status: 400 }
+      )
+    }
+
+    let poolEntry = product.pooledStock.find((p: any) => p.branchId.toString() === branchId)
+    if (!poolEntry) {
+      product.pooledStock.push({ branchId, stockQty: 0, buyingPrice: buyingPrice ?? 0 })
+      poolEntry = product.pooledStock[product.pooledStock.length - 1]
+    }
+
+    const quantityBefore = poolEntry.stockQty
+    const buyingPriceBefore = poolEntry.buyingPrice
+
+    const quantityAfter = action === 'add' ? quantityBefore + quantity : quantity
+    const quantityChange = quantityAfter - quantityBefore
+
+    poolEntry.stockQty = quantityAfter
+    if (buyingPrice !== undefined) poolEntry.buyingPrice = buyingPrice
+
+    await product.save()
+
+    const effectiveBuyingPrice = buyingPrice !== undefined ? buyingPrice : buyingPriceBefore
+    const totalPurchaseCost =
+      recordAsPurchase && effectiveBuyingPrice
+        ? Math.abs(quantityChange) * effectiveBuyingPrice
+        : undefined
+
+    const log = await StockLog.create({
+      branchId,
+      productId,
+      variantId: '__pool__',
+      action,
+      quantityBefore,
+      quantityChange,
+      quantityAfter,
+      buyingPriceBefore,
+      buyingPriceAfter: buyingPrice !== undefined ? buyingPrice : undefined,
+      paidFromCash: recordAsPurchase,
+      totalPurchaseCost,
+      notes,
+      recordedBy: userId
+    })
+
+    let procurementId: string | undefined
+    if (recordAsPurchase && effectiveBuyingPrice > 0) {
+      const { default: Transaction } = await import('@/models/Transaction')
+      const { generateInvoiceId } = await import('@/lib/utils')
+      const totalCost = quantity * effectiveBuyingPrice
+      const txn = await Transaction.create({
+        invoiceId: generateInvoiceId(branchId),
+        branchId,
+        recordedBy: userId,
+        transactionType: 'Procurement',
+        items: [{ productId, variantId: '__pool__', quantity, rateApplied: effectiveBuyingPrice, isCustomOverride: false }],
+        financials: { totalBill: totalCost, cashPaid: totalCost, amountAddedToKhata: 0, netProfitAmount: -totalCost },
+        notes: notes ?? `Pool stock purchase — ${product.name}`
+      })
+      procurementId = txn._id.toString()
+    }
+
+    if (recordAsPurchase) {
+      updateDailySummary(branchId, today()).catch(() => {})
+    }
+
+    return NextResponse.json({ stockLevel: quantityAfter, log: log._id, procurementId })
+  }
+
+  // ── Normal mode: update variant branchDetail ──────────────────────────────────
+  const variantCheck = await Product.findOne({ _id: productId, 'variants.variantId': variantId })
+  if (!variantCheck) return NextResponse.json({ error: 'Product or variant not found' }, { status: 404 })
+
+  const variant = variantCheck.variants.find((v: any) => v.variantId === variantId)
   let bd = variant.branchDetails.find((b: any) => b.branchId.toString() === branchId)
 
   if (!bd) {
@@ -66,7 +142,7 @@ export async function POST(req: NextRequest) {
   bd.stockLevel = quantityAfter
   if (buyingPrice !== undefined) bd.buyingPrice = buyingPrice
 
-  await product.save()
+  await variantCheck.save()
 
   const effectiveBuyingPrice = buyingPrice !== undefined ? buyingPrice : buyingPriceBefore
   const totalPurchaseCost = recordAsPurchase && effectiveBuyingPrice
@@ -104,7 +180,7 @@ export async function POST(req: NextRequest) {
       transactionType: 'Procurement',
       items: [{ productId, variantId, quantity, rateApplied: buyingPrice, isCustomOverride: false }],
       financials: { totalBill: totalCost, cashPaid: totalCost, amountAddedToKhata: 0, netProfitAmount: -totalCost },
-      notes: notes ?? `Stock purchase — ${product.name} (${variantId})`
+      notes: notes ?? `Stock purchase — ${variantCheck.name} (${variantId})`
     })
     procurementId = txn._id.toString()
   }

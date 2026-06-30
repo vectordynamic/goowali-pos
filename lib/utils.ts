@@ -28,7 +28,11 @@ export function stripSensitiveProductData(products: any[], role: Role) {
         const { buyingPrice: _bp, ...safe } = bd
         return safe
       })
-    }))
+    })),
+    pooledStock: product.pooledStock?.map((ps: any) => {
+      const { buyingPrice: _bp, ...safe } = ps
+      return safe
+    })
   }))
 }
 
