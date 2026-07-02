@@ -34,6 +34,12 @@ export async function updateDailySummary(branchId: string, date: string) {
         procurementCount: {
           $sum: { $cond: [{ $eq: ['$transactionType', 'Procurement'] }, 1, 0] }
         },
+        ownerPurchaseCost: {
+          $sum: { $cond: [{ $eq: ['$transactionType', 'Owner Purchase'] }, '$financials.totalBill', 0] }
+        },
+        ownerWithdrawals: {
+          $sum: { $cond: [{ $eq: ['$transactionType', 'Owner Withdrawal'] }, '$financials.cashPaid', 0] }
+        },
         expenses: {
           $sum: { $cond: [{ $eq: ['$transactionType', 'Expense'] }, '$financials.totalBill', 0] }
         },
@@ -73,7 +79,7 @@ export async function updateDailySummary(branchId: string, date: string) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _id: _ignored, ...rest } = agg ?? {
     txCount: 0, salesRevenue: 0, grossProfit: 0, salesCount: 0,
-    procurementCost: 0, procurementCount: 0, expenses: 0,
+    procurementCost: 0, procurementCount: 0, ownerPurchaseCost: 0, ownerWithdrawals: 0, expenses: 0,
     cashIn: 0, cashOut: 0, khataAdded: 0, khataCollected: 0,
   }
 

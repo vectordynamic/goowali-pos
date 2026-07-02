@@ -269,12 +269,12 @@ export default function POSTerminal({ branchId }: Props) {
     mode === 'Credit Sale' ? cartTotal :
     mode === 'Partial Payment' ? Math.max(0, cartTotal - cashPaid) : 0
 
+  // A pending (not-yet-saved) customer exists as soon as either field has something —
+  // phone and name are both independently optional, neither gates the other.
   const pendingCustomer: PendingCustomer | null =
-    !selectedCustomer && customerPhone.trim()
+    !selectedCustomer && (customerPhone.trim() || customerName.trim())
       ? { name: customerName.trim(), phone: customerPhone.trim(), customerType }
       : null
-
-  const hasCustomer = !!(selectedCustomer || pendingCustomer)
 
   async function handleCheckout() {
     if (cart.length === 0) {
@@ -285,8 +285,11 @@ export default function POSTerminal({ branchId }: Props) {
       toast.error('কিছু পণ্যের দাম নির্ধারণ করা হয়নি')
       return
     }
-    if (mode !== 'Cash Sale' && !hasCustomer) {
-      toast.error('বাকি বা আংশিক পেমেন্টের জন্য ফোন নম্বর দিন')
+    // Credit/Partial always needs a name to identify whose due this is — phone stays
+    // optional even here. An already-selected existing customer is always fine (they're
+    // already a real record with a name on file).
+    if (mode !== 'Cash Sale' && !selectedCustomer && !customerName.trim()) {
+      toast.error('বাকি বা আংশিক পেমেন্টের জন্য নাম আবশ্যক')
       return
     }
 
@@ -300,7 +303,7 @@ export default function POSTerminal({ branchId }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: pendingCustomer.name || pendingCustomer.phone,
-          phone: pendingCustomer.phone,
+          ...(pendingCustomer.phone ? { phone: pendingCustomer.phone } : {}),
           customerType: pendingCustomer.customerType,
         }),
       })
@@ -668,30 +671,37 @@ export default function POSTerminal({ branchId }: Props) {
                 )}
               </div>
 
-              {customerPhone.trim() && (
-                <>
-                  <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-400 shadow-sm"
-                    placeholder="নাম লিখুন"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                  />
-                  <div className="flex gap-2">
-                    {(['Retail', 'Paikari'] as const).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => setCustomerType(t)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors border ${
-                          customerType === t
-                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                            : 'bg-white border-gray-300 text-gray-500'
-                        }`}
-                      >
-                        {t === 'Retail' ? 'খুচরা' : 'পাইকারি'}
-                      </button>
-                    ))}
-                  </div>
-                </>
+              <input
+                className={`w-full px-3 py-2 text-sm border rounded-lg bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-400 shadow-sm ${
+                  mode !== 'Cash Sale' && !customerName.trim() ? 'border-red-300' : 'border-gray-300'
+                }`}
+                placeholder={mode !== 'Cash Sale' ? 'নাম লিখুন (আবশ্যক)' : 'নাম লিখুন (ঐচ্ছিক)'}
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+              />
+
+              {mode !== 'Cash Sale' && !customerName.trim() && (
+                <p className="text-xs text-red-600 font-bold bg-red-50 rounded-lg px-2 py-1.5 border border-red-200">
+                  বাকি/আংশিকের জন্য নাম আবশ্যক
+                </p>
+              )}
+
+              {(customerPhone.trim() || customerName.trim()) && (
+                <div className="flex gap-2">
+                  {(['Retail', 'Paikari'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setCustomerType(t)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors border ${
+                        customerType === t
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                          : 'bg-white border-gray-300 text-gray-500'
+                      }`}
+                    >
+                      {t === 'Retail' ? 'খুচরা' : 'পাইকারি'}
+                    </button>
+                  ))}
+                </div>
               )}
 
               {pendingCustomer && (

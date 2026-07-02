@@ -17,6 +17,7 @@ interface SystemTotals {
   dueCollections: number
   expensesLogged: number
   procurementCost: number
+  ownerWithdrawals: number
   expectedDrawerCash: number
 }
 
@@ -44,6 +45,8 @@ interface ClosingRecord {
   _id: string
   date: string
   status: string
+  dayStartedAt?: string | null
+  dayLockedAt?: string | null
   mathematicalSystemTotals: SystemTotals
   nightCashCounted: number | null
   cashCheckReason: string | null
@@ -52,6 +55,14 @@ interface ClosingRecord {
   tomorrowPreOrders: PreOrderEntry[]
   discrepancies: { cashShortage: number; stockMismatch: number }
   yesterdayPreOrders?: PreOrderEntry[]
+}
+
+// Always displayed in Bangladesh time (UTC+6), regardless of where the server runs.
+function bdTime(iso?: string | null) {
+  if (!iso) return null
+  return new Date(iso).toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: true,
+  })
 }
 
 interface BranchDetail { branchId: string; stockLevel: number }
@@ -236,6 +247,29 @@ export default function BranchReport({ role, branches, assignedBranches, default
         <div className="text-center py-20 text-slate-400">Loading…</div>
       ) : (
         <>
+          {/* ── Section 0: Shop Opened / Closed (Bangladesh time) ── */}
+          {!isPending && (
+            <section>
+              <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-3 flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-green-400" />
+                  <span className="text-xs text-slate-400">Opened</span>
+                  <span className="text-sm font-black text-slate-100">
+                    {bdTime(closing?.dayStartedAt) ?? '—'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-red-400" />
+                  <span className="text-xs text-slate-400">Closed</span>
+                  <span className="text-sm font-black text-slate-100">
+                    {closing?.status === 'Locked' ? bdTime(closing?.dayLockedAt) ?? '—' : 'Still open'}
+                  </span>
+                </div>
+                <span className="text-xs text-slate-600">(Bangladesh time)</span>
+              </div>
+            </section>
+          )}
+
           {/* ── Section 1: Day Status Banner (only when Pending) ── */}
           {isPending && (
             <section>
@@ -322,6 +356,15 @@ export default function BranchReport({ role, branches, assignedBranches, default
                     <div className="flex flex-col items-center bg-amber-900/30 rounded-lg px-3 py-2 min-w-[80px]">
                       <span className="text-xs text-amber-500 mb-0.5">Stock Bought</span>
                       <span className="font-bold text-amber-400">{formatCurrency(st?.procurementCost ?? 0)}</span>
+                    </div>
+                  </>
+                )}
+                {(st?.ownerWithdrawals ?? 0) > 0 && (
+                  <>
+                    <span className="text-slate-500 font-bold">−</span>
+                    <div className="flex flex-col items-center bg-purple-900/30 rounded-lg px-3 py-2 min-w-[80px]">
+                      <span className="text-xs text-purple-400 mb-0.5">Withdrawn</span>
+                      <span className="font-bold text-purple-300">{formatCurrency(st?.ownerWithdrawals ?? 0)}</span>
                     </div>
                   </>
                 )}
@@ -611,10 +654,11 @@ export default function BranchReport({ role, branches, assignedBranches, default
             ) : (
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[850px]">
+                  <table className="w-full text-sm min-w-[950px]">
                     <thead>
                       <tr className="border-b border-slate-700 bg-slate-800/60">
                         <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Date</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Hours (BD time)</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Cash Sales</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Due Collected</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Expenses</th>
@@ -641,6 +685,11 @@ export default function BranchReport({ role, branches, assignedBranches, default
                               {h.date === today() && (
                                 <span className="ml-2 text-xs bg-blue-900/40 text-blue-400 border border-blue-800/40 px-1.5 py-0.5 rounded">Today</span>
                               )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">
+                              {bdTime(h.dayStartedAt) ?? '—'}
+                              {' – '}
+                              {h.status === 'Locked' ? bdTime(h.dayLockedAt) ?? '—' : h.status === 'Open' ? 'still open' : '—'}
                             </td>
                             <td className="px-4 py-3 text-right text-green-400 font-bold">
                               {formatCurrency(hSt.cashSales)}

@@ -186,6 +186,12 @@ export const DailyClosingSubmitSchema = z.object({
   remainingMilkStock: z.number().min(0).optional()
 })
 
+// ─── Owner withdrawal ─────────────────────────────────────────────────────────
+export const WithdrawalCreateSchema = z.object({
+  amount: z.number().positive('Amount must be > 0'),
+  notes: z.string().trim().max(300).optional()
+})
+
 // ─── Helper: parse and return 400 on failure ─────────────────────────────────
 import { NextResponse } from 'next/server'
 

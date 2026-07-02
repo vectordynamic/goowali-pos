@@ -10,6 +10,8 @@ export interface DailyClosingDocument extends Document {
     cashSales: number
     dueCollections: number
     expensesLogged: number
+    procurementCost: number
+    ownerWithdrawals: number
     expectedDrawerCash: number
   }
   managerSubmittedTotals: {
@@ -21,6 +23,8 @@ export interface DailyClosingDocument extends Document {
     stockMismatch: number
   }
   // New fields
+  dayStartedAt: Date | null             // when manager tapped "Start Day" (shop opening time)
+  dayLockedAt: Date | null              // when manager submitted the Z-Report (shop closing time)
   nightCashCounted: number | null
   cashCheckReason: string | null        // reason when |cash gap| > ৳30
   physicalStock: Array<{
@@ -56,6 +60,8 @@ const DailyClosingSchema = new Schema<DailyClosingDocument>(
       cashSales: { type: Number, default: 0 },
       dueCollections: { type: Number, default: 0 },
       expensesLogged: { type: Number, default: 0 },
+      procurementCost: { type: Number, default: 0 },
+      ownerWithdrawals: { type: Number, default: 0 },
       expectedDrawerCash: { type: Number, default: 0 },
     },
     managerSubmittedTotals: {
@@ -66,6 +72,9 @@ const DailyClosingSchema = new Schema<DailyClosingDocument>(
       cashShortage: { type: Number, default: 0 },
       stockMismatch: { type: Number, default: 0 },
     },
+
+    dayStartedAt: { type: Date, default: null },
+    dayLockedAt: { type: Date, default: null },
 
     // Night cash count (end-of-day physical count)
     nightCashCounted: { type: Number, default: null },

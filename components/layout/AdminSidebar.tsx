@@ -16,7 +16,8 @@ import {
   Wallet,
   History,
   LayoutDashboard,
-  KeyRound
+  KeyRound,
+  Banknote
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -41,6 +42,7 @@ const adminNavItems = [
   { href: '/regular-orders', label: 'Regular Orders', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/due', label: 'Due Collection', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/stock-log', label: 'Stock Log', icon: History, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
+  { href: '/owner-ledger', label: 'Owner Ledger', icon: Banknote, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/users', label: 'Users', icon: Users, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/branches', label: 'Branches', icon: GitBranch, roles: ['SUPER_ADMIN'] }
 ]

@@ -15,9 +15,13 @@ const StockUpdateSchema = z.object({
   action: z.enum(['add', 'set']),
   quantity: z.number().positive('Quantity must be positive'),
   buyingPrice: z.number().min(0).optional(),
-  recordAsPurchase: z.boolean().default(false),
+  paidBy: z.enum(['store', 'owner']).default('store'),
+  ownerId: objectId.optional(),  // required when paidBy is 'owner' — which branch admin funded it
   notes: z.string().trim().max(300).optional()
-})
+}).refine(
+  (data) => data.paidBy !== 'owner' || !!data.ownerId,
+  { message: 'Select which owner paid', path: ['ownerId'] }
+)
 
 // POST /api/stock-log — manager or admin updates stock for a branch
 export async function POST(req: NextRequest) {
@@ -37,7 +41,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { branchId, productId, variantId, action, quantity, buyingPrice, recordAsPurchase, notes } = parsed.data
+  const { branchId, productId, variantId, action, quantity, buyingPrice, paidBy, ownerId, notes } = parsed.data
 
   if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
 
@@ -45,6 +49,17 @@ export async function POST(req: NextRequest) {
 
   const { default: Product } = await import('@/models/Product')
   const { default: StockLog } = await import('@/models/StockLog')
+
+  // Never trust the client on who "owner" is — must actually be a branch admin of this branch.
+  if (paidBy === 'owner') {
+    const { default: User } = await import('@/models/User')
+    const owner = await User.findOne({
+      _id: ownerId, role: 'BRANCH_ADMIN', assignedBranches: branchId, isActive: true
+    }).select('_id').lean()
+    if (!owner) {
+      return NextResponse.json({ error: 'Invalid owner selected' }, { status: 400 })
+    }
+  }
 
   const product = await Product.findById(productId)
   if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
@@ -77,7 +92,7 @@ export async function POST(req: NextRequest) {
 
     const effectiveBuyingPrice = buyingPrice !== undefined ? buyingPrice : buyingPriceBefore
     const totalPurchaseCost =
-      recordAsPurchase && effectiveBuyingPrice
+      effectiveBuyingPrice > 0
         ? Math.abs(quantityChange) * effectiveBuyingPrice
         : undefined
 
@@ -91,14 +106,14 @@ export async function POST(req: NextRequest) {
       quantityAfter,
       buyingPriceBefore,
       buyingPriceAfter: buyingPrice !== undefined ? buyingPrice : undefined,
-      paidFromCash: recordAsPurchase,
+      paidFromCash: paidBy === 'store',
       totalPurchaseCost,
       notes,
       recordedBy: userId
     })
 
     let procurementId: string | undefined
-    if (recordAsPurchase && effectiveBuyingPrice > 0) {
+    if (effectiveBuyingPrice > 0) {
       const { default: Transaction } = await import('@/models/Transaction')
       const { generateInvoiceId } = await import('@/lib/utils')
       const totalCost = quantity * effectiveBuyingPrice
@@ -106,15 +121,16 @@ export async function POST(req: NextRequest) {
         invoiceId: generateInvoiceId(branchId),
         branchId,
         recordedBy: userId,
-        transactionType: 'Procurement',
+        ownerId: paidBy === 'owner' ? ownerId : null,
+        transactionType: paidBy === 'owner' ? 'Owner Purchase' : 'Procurement',
         items: [{ productId, variantId: '__pool__', quantity, rateApplied: effectiveBuyingPrice, isCustomOverride: false }],
         financials: { totalBill: totalCost, cashPaid: totalCost, amountAddedToKhata: 0, netProfitAmount: -totalCost },
-        notes: notes ?? `Pool stock purchase — ${product.name}`
+        notes: notes ?? (paidBy === 'owner' ? `Owner-funded pool stock — ${product.name}` : `Pool stock purchase — ${product.name}`)
       })
       procurementId = txn._id.toString()
     }
 
-    if (recordAsPurchase) {
+    if (effectiveBuyingPrice > 0) {
       updateDailySummary(branchId, today()).catch(() => {})
     }
 
@@ -145,7 +161,7 @@ export async function POST(req: NextRequest) {
   await variantCheck.save()
 
   const effectiveBuyingPrice = buyingPrice !== undefined ? buyingPrice : buyingPriceBefore
-  const totalPurchaseCost = recordAsPurchase && effectiveBuyingPrice
+  const totalPurchaseCost = effectiveBuyingPrice > 0
     ? Math.abs(quantityChange) * effectiveBuyingPrice
     : undefined
 
@@ -159,7 +175,7 @@ export async function POST(req: NextRequest) {
     quantityAfter,
     buyingPriceBefore,
     buyingPriceAfter: buyingPrice !== undefined ? buyingPrice : undefined,
-    paidFromCash: recordAsPurchase,
+    paidFromCash: paidBy === 'store',
     totalPurchaseCost,
     notes,
     recordedBy: userId
@@ -167,8 +183,8 @@ export async function POST(req: NextRequest) {
 
   let procurementId: string | undefined
 
-  // If manager paid from store cash, record a Procurement transaction (cash outflow)
-  if (recordAsPurchase && buyingPrice !== undefined && buyingPrice > 0) {
+  // A price was entered this time — record who funded it (store cash or a specific owner)
+  if (buyingPrice !== undefined && buyingPrice > 0) {
     const { default: Transaction } = await import('@/models/Transaction')
     const { generateInvoiceId } = await import('@/lib/utils')
 
@@ -177,16 +193,17 @@ export async function POST(req: NextRequest) {
       invoiceId: generateInvoiceId(branchId),
       branchId,
       recordedBy: userId,
-      transactionType: 'Procurement',
+      ownerId: paidBy === 'owner' ? ownerId : null,
+      transactionType: paidBy === 'owner' ? 'Owner Purchase' : 'Procurement',
       items: [{ productId, variantId, quantity, rateApplied: buyingPrice, isCustomOverride: false }],
       financials: { totalBill: totalCost, cashPaid: totalCost, amountAddedToKhata: 0, netProfitAmount: -totalCost },
-      notes: notes ?? `Stock purchase — ${variantCheck.name} (${variantId})`
+      notes: notes ?? (paidBy === 'owner' ? `Owner-funded stock — ${variantCheck.name} (${variantId})` : `Stock purchase — ${variantCheck.name} (${variantId})`)
     })
     procurementId = txn._id.toString()
   }
 
   // Update pre-computed daily summary if a procurement was recorded (non-blocking)
-  if (recordAsPurchase) {
+  if (buyingPrice !== undefined && buyingPrice > 0) {
     updateDailySummary(branchId, today()).catch(() => {})
   }
 

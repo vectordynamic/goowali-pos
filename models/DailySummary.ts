@@ -11,8 +11,10 @@ export interface DailySummaryDocument extends Document {
   salesCount: number
 
   // Procurement (stock buying)
-  procurementCost: number   // totalBill from Procurement transactions
+  procurementCost: number   // totalBill from Procurement transactions (store cash)
   procurementCount: number
+  ownerPurchaseCost: number // totalBill from Owner Purchase transactions (owner's own money, not store cash)
+  ownerWithdrawals: number  // cashPaid from Owner Withdrawal transactions (store cash taken by an admin)
 
   // Expenses
   expenses: number          // totalBill from Expense transactions
@@ -48,6 +50,8 @@ const DailySummarySchema = new Schema<DailySummaryDocument>(
 
     procurementCost: { type: Number, default: 0 },
     procurementCount: { type: Number, default: 0 },
+    ownerPurchaseCost: { type: Number, default: 0 },
+    ownerWithdrawals: { type: Number, default: 0 },
 
     expenses: { type: Number, default: 0 },
     netProfit: { type: Number, default: 0 },

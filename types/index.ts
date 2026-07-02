@@ -13,6 +13,8 @@ export type TransactionType =
   | 'Due Collection'
   | 'Expense'
   | 'Procurement'
+  | 'Owner Purchase'      // stock funded by a branch admin's own money — never touches drawer cash
+  | 'Owner Withdrawal'    // cash taken from the drawer by a branch admin — reduces drawer cash
 
 export type DayStatus = 'Pending' | 'Open' | 'Locked'
 
@@ -131,6 +133,7 @@ export interface ITransaction {
   branchId: Types.ObjectId
   recordedBy: Types.ObjectId
   customerId?: Types.ObjectId | null
+  ownerId?: Types.ObjectId | null    // which branch admin funded/withdrew (Owner Purchase / Owner Withdrawal only)
   transactionType: TransactionType
   items: ITransactionItem[]
   financials: {
@@ -156,6 +159,8 @@ export interface IDailyClosing {
     cashSales: number
     dueCollections: number
     expensesLogged: number
+    procurementCost: number
+    ownerWithdrawals: number
     expectedDrawerCash: number
   }
   managerSubmittedTotals: {

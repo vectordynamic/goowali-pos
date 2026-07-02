@@ -36,12 +36,19 @@ interface Product {
 interface RowState {
   quantity: string
   buyingPrice: string
-  recordAsPurchase: boolean
+  paidBy: 'store' | 'owner'
+  ownerId: string
   saving: boolean
+}
+
+interface OwnerOption {
+  _id: string
+  name: string
 }
 
 export default function StockManager({ branchId }: { branchId: string }) {
   const [products, setProducts] = useState<Product[]>([])
+  const [owners, setOwners] = useState<OwnerOption[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(true)
   const [rows, setRows] = useState<Record<string, RowState>>({})
@@ -56,6 +63,13 @@ export default function StockManager({ branchId }: { branchId: string }) {
   }, [branchId])
 
   useEffect(() => { loadProducts() }, [loadProducts])
+
+  useEffect(() => {
+    fetch('/api/branch-admins')
+      .then((r) => r.json())
+      .then((data) => setOwners(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
 
   // ── Normal mode helpers ──────────────────────────────────────────────────────
   function getStock(product: Product, variantId: string) {
@@ -79,13 +93,77 @@ export default function StockManager({ branchId }: { branchId: string }) {
     return rows[key] ?? {
       quantity: '',
       buyingPrice: buyingPrice > 0 ? String(buyingPrice) : '',
-      recordAsPurchase: true,
+      paidBy: 'store',
+      ownerId: '',
       saving: false,
     }
   }
 
   function setRow(key: string, patch: Partial<RowState>, bpHint = 0) {
     setRows((prev) => ({ ...prev, [key]: { ...getRow(key, bpHint), ...prev[key], ...patch } }))
+  }
+
+  // ── Store / owner pay-source picker — shared by pool and normal rows ──────────
+  function PaySourcePicker({ rowKeyValue, buyingPrice }: { rowKeyValue: string; buyingPrice: number }) {
+    const row = getRow(rowKeyValue, buyingPrice)
+    const total = row.quantity && row.buyingPrice ? Number(row.quantity) * Number(row.buyingPrice) : 0
+
+    return (
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setRow(rowKeyValue, { paidBy: 'store' }, buyingPrice)}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-colors ${
+              row.paidBy === 'store' ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-gray-300 text-gray-600'
+            }`}
+          >
+            দোকানের টাকায়
+          </button>
+          <button
+            type="button"
+            onClick={() => setRow(rowKeyValue, {
+              paidBy: 'owner',
+              ownerId: owners.length === 1 ? owners[0]._id : row.ownerId,
+            }, buyingPrice)}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-colors ${
+              row.paidBy === 'owner' ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-300 text-gray-600'
+            }`}
+          >
+            মালিকের টাকায়
+          </button>
+        </div>
+
+        {row.paidBy === 'owner' && (
+          owners.length === 0 ? (
+            <p className="text-xs text-red-500 font-bold">কোনো মালিক পাওয়া যায়নি</p>
+          ) : owners.length === 1 ? (
+            <p className="text-sm font-bold text-purple-700">মালিক: {owners[0].name}</p>
+          ) : (
+            <div className="flex gap-2 flex-wrap">
+              {owners.map((o) => (
+                <button
+                  key={o._id}
+                  type="button"
+                  onClick={() => setRow(rowKeyValue, { ownerId: o._id }, buyingPrice)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold border-2 transition-colors ${
+                    row.ownerId === o._id ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-300 text-gray-600'
+                  }`}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
+          )
+        )}
+
+        {total > 0 && (
+          <p className={`text-sm font-black ${row.paidBy === 'owner' ? 'text-purple-700' : 'text-green-700'}`}>
+            ৳{total.toLocaleString()}
+          </p>
+        )}
+      </div>
+    )
   }
 
   // ── Normal mode save ─────────────────────────────────────────────────────────
@@ -97,6 +175,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
     const qty = Number(row.quantity)
     if (!qty || qty <= 0) { toast.error('কত পেলেন সেটা লিখুন'); return }
     if (currentBuyingPrice === 0 && row.buyingPrice === '') { toast.error('ক্রয় মূল্য দিন'); return }
+    if (row.paidBy === 'owner' && !row.ownerId) { toast.error('মালিক বাছুন'); return }
 
     setRow(key, { saving: true })
 
@@ -110,7 +189,8 @@ export default function StockManager({ branchId }: { branchId: string }) {
         action: 'add',
         quantity: qty,
         buyingPrice: row.buyingPrice !== '' ? Number(row.buyingPrice) : undefined,
-        recordAsPurchase: row.recordAsPurchase,
+        paidBy: row.paidBy,
+        ownerId: row.paidBy === 'owner' ? row.ownerId : undefined,
       }),
     })
 
@@ -158,6 +238,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
 
     const qty = Number(row.quantity)
     if (!qty || qty <= 0) { toast.error('কত পেলেন সেটা লিখুন'); return }
+    if (row.paidBy === 'owner' && !row.ownerId) { toast.error('মালিক বাছুন'); return }
 
     setRow(key, { saving: true })
 
@@ -171,7 +252,8 @@ export default function StockManager({ branchId }: { branchId: string }) {
         action: 'add',
         quantity: qty,
         buyingPrice: row.buyingPrice !== '' ? Number(row.buyingPrice) : undefined,
-        recordAsPurchase: row.recordAsPurchase,
+        paidBy: row.paidBy,
+        ownerId: row.paidBy === 'owner' ? row.ownerId : undefined,
       }),
     })
 
@@ -307,20 +389,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                   </div>
 
                   {row.quantity && (
-                    <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-green-700 pl-1">
-                      <input
-                        type="checkbox"
-                        checked={row.recordAsPurchase}
-                        onChange={(e) => setRow(poolKey, { recordAsPurchase: e.target.checked }, buyingPrice)}
-                        className="w-4 h-4 accent-green-600"
-                      />
-                      দোকানের টাকায় কিনেছি
-                      {row.recordAsPurchase && row.quantity && row.buyingPrice && (
-                        <span className="text-green-700 font-black ml-1">
-                          ৳{(Number(row.quantity) * Number(row.buyingPrice)).toLocaleString()}
-                        </span>
-                      )}
-                    </label>
+                    <PaySourcePicker rowKeyValue={poolKey} buyingPrice={buyingPrice} />
                   )}
                 </div>
               )
@@ -402,20 +471,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                   </div>
 
                   {row.quantity && (
-                    <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-green-700 pl-1">
-                      <input
-                        type="checkbox"
-                        checked={row.recordAsPurchase}
-                        onChange={(e) => setRow(key, { recordAsPurchase: e.target.checked }, buyingPrice)}
-                        className="w-4 h-4 accent-green-600"
-                      />
-                      দোকানের টাকায় কিনেছি
-                      {row.recordAsPurchase && row.quantity && row.buyingPrice && (
-                        <span className="text-green-700 font-black ml-1">
-                          ৳{(Number(row.quantity) * Number(row.buyingPrice)).toLocaleString()}
-                        </span>
-                      )}
-                    </label>
+                    <PaySourcePicker rowKeyValue={key} buyingPrice={buyingPrice} />
                   )}
                 </div>
               )

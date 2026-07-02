@@ -14,6 +14,20 @@ function prevDate(date: string) {
   return d.toISOString().split('T')[0]
 }
 
+// Owner withdrawals taken after yesterday's books were locked (late at night, or before
+// today's day was started) never made it into yesterday's frozen totals — they still need
+// to reduce the cash carried forward into today's opening cash.
+async function lateWithdrawalsSince(branchId: string, lockedAt: Date | null | undefined, beforeDate: string): Promise<number> {
+  if (!lockedAt) return 0
+  const branchOid = new mongoose.Types.ObjectId(branchId)
+  const cutoff = new Date(beforeDate)
+  const [result] = await Transaction.aggregate([
+    { $match: { branchId: branchOid, transactionType: 'Owner Withdrawal', createdAt: { $gt: lockedAt, $lt: cutoff } } },
+    { $group: { _id: null, total: { $sum: '$financials.cashPaid' } } }
+  ])
+  return result?.total ?? 0
+}
+
 async function computeSystemTotals(branchId: string, date: string, openingCash = 0) {
   const start = new Date(date)
   const end = new Date(date)
@@ -50,6 +64,11 @@ async function computeSystemTotals(branchId: string, date: string, openingCash =
             $cond: [{ $eq: ['$transactionType', 'Procurement'] }, '$financials.cashPaid', 0],
           },
         },
+        ownerWithdrawals: {
+          $sum: {
+            $cond: [{ $eq: ['$transactionType', 'Owner Withdrawal'] }, '$financials.cashPaid', 0],
+          },
+        },
       },
     },
   ])
@@ -58,9 +77,10 @@ async function computeSystemTotals(branchId: string, date: string, openingCash =
   const dueCollections = result?.dueCollections ?? 0
   const expensesLogged = result?.expensesLogged ?? 0
   const procurementCost = result?.procurementCost ?? 0
-  const expectedDrawerCash = openingCash + cashSales + dueCollections - expensesLogged - procurementCost
+  const ownerWithdrawals = result?.ownerWithdrawals ?? 0
+  const expectedDrawerCash = openingCash + cashSales + dueCollections - expensesLogged - procurementCost - ownerWithdrawals
 
-  return { openingCash, cashSales, dueCollections, expensesLogged, procurementCost, expectedDrawerCash }
+  return { openingCash, cashSales, dueCollections, expensesLogged, procurementCost, ownerWithdrawals, expectedDrawerCash }
 }
 
 // GET /api/daily-closing?branchId=xxx&date=YYYY-MM-DD
@@ -78,7 +98,8 @@ export async function GET(req: NextRequest) {
   await dbConnect()
 
   const yesterday = await DailyClosing.findOne({ branchId, date: prevDate(date) })
-  const openingCash = yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0
+  const lateWithdrawn = await lateWithdrawalsSince(branchId, yesterday?.dayLockedAt, date)
+  const openingCash = (yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0) - lateWithdrawn
   const yesterdayPreOrders = yesterday?.tomorrowPreOrders ?? []
 
   let closing = await DailyClosing.findOne({ branchId, date })
@@ -135,7 +156,8 @@ export async function PATCH(req: NextRequest) {
 
     // Carry opening cash from yesterday
     const yesterday = await DailyClosing.findOne({ branchId, date: prevDate(targetDate) })
-    const openingCash = yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0
+    const lateWithdrawn = await lateWithdrawalsSince(branchId, yesterday?.dayLockedAt, targetDate)
+    const openingCash = (yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0) - lateWithdrawn
     const systemTotals = await computeSystemTotals(branchId, targetDate, openingCash)
 
     const closing = await DailyClosing.findOneAndUpdate(
@@ -143,6 +165,7 @@ export async function PATCH(req: NextRequest) {
       {
         $set: {
           status: 'Open',
+          dayStartedAt: new Date(),
           mathematicalSystemTotals: systemTotals,
           managerSubmittedTotals: { physicalCashCounted: 0, remainingMilkStock: 0 },
           discrepancies: { cashShortage: 0, stockMismatch: 0 },
@@ -253,7 +276,14 @@ export async function POST(req: NextRequest) {
 
   await dbConnect()
 
-  const systemTotals = await computeSystemTotals(branchId, targetDate)
+  // Carry the real opening cash into the final snapshot — previously this always computed
+  // with openingCash=0 here, silently discarding the value set at "Start Day" and making the
+  // locked cashShortage wrong for every closed day.
+  const yesterday = await DailyClosing.findOne({ branchId, date: prevDate(targetDate) })
+  const lateWithdrawn = await lateWithdrawalsSince(branchId, yesterday?.dayLockedAt, targetDate)
+  const openingCash = (yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0) - lateWithdrawn
+
+  const systemTotals = await computeSystemTotals(branchId, targetDate, openingCash)
   let closing = await DailyClosing.findOne({ branchId, date: targetDate })
   if (!closing) closing = new DailyClosing({ branchId, date: targetDate })
 
@@ -266,6 +296,7 @@ export async function POST(req: NextRequest) {
   closing.managerSubmittedTotals = { physicalCashCounted: physicalCashCounted ?? 0, remainingMilkStock: remainingMilkStock ?? 0 }
   closing.discrepancies = { cashShortage, stockMismatch: 0 }
   closing.status = 'Locked'
+  closing.dayLockedAt = new Date()
   closing.submittedBy = userId as any
 
   await closing.save()

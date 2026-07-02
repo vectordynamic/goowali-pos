@@ -14,6 +14,7 @@ export interface TransactionDocument extends Document {
   branchId: Types.ObjectId
   recordedBy: Types.ObjectId
   customerId?: Types.ObjectId | null
+  ownerId?: Types.ObjectId | null
   transactionType: TransactionType
   items: TransactionItemDocument[]
   financials: {
@@ -58,9 +59,19 @@ const TransactionSchema = new Schema<TransactionDocument>(
       ref: 'Customer',
       default: null
     },
+    // Which branch admin funded an Owner Purchase or made an Owner Withdrawal.
+    // Not used by any other transaction type.
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     transactionType: {
       type: String,
-      enum: ['Cash Sale', 'Credit Sale', 'Partial Payment', 'Due Collection', 'Expense', 'Procurement'],
+      enum: [
+        'Cash Sale', 'Credit Sale', 'Partial Payment', 'Due Collection', 'Expense', 'Procurement',
+        'Owner Purchase', 'Owner Withdrawal'
+      ],
       required: true
     },
     items: { type: [TransactionItemSchema], default: [] },
