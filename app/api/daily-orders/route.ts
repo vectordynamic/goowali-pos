@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
 import { assertBranchAccess, branchDenied, generateInvoiceId } from '@/lib/utils'
+import { updateDailySummary } from '@/lib/update-daily-summary'
 import type { Role } from '@/types'
 
 function todayStr() {
@@ -53,10 +54,12 @@ export async function GET(req: NextRequest) {
 
   const logs = await DailyOrderLog.find({ branchId, date })
     .populate('customerId', 'name phone location customerType paikariConfig khata')
+    .populate('transactionId', 'items financials.totalBill')
     .sort({ createdAt: 1 })
     .lean()
 
   // Compute stock availability for each pending order so the UI can disable Taken button
+  // and let the manager adjust today's quantity within what's actually available.
   const { default: Product } = await import('@/models/Product')
 
   const allProductIds = [
@@ -70,31 +73,44 @@ export async function GET(req: NextRequest) {
     ? await Product.find({ _id: { $in: allProductIds } }).lean()
     : []
 
-  const logsWithStock = logs.map((log: any) => {
-    if (log.status !== 'pending') return { ...log, stockOk: true, stockIssues: [] }
+  // Per line-item available quantity, pooled-aware — used by the UI to validate
+  // a manager-adjusted quantity live, not just the configured default.
+  function availableFor(rate: any) {
+    const product = (products as any[]).find(
+      (p: any) => p._id.toString() === rate.productId.toString()
+    )
+    if (!product) return { name: 'Unknown', available: 0 }
 
-    const rates = (log.customerId as any)?.paikariConfig?.fixedProductRates ?? []
-    const stockIssues: string[] = []
+    const variant = product.variants.find((v: any) => v.variantId === rate.variantId)
+    if (!variant) return { name: product.name, available: 0 }
 
-    for (const rate of rates) {
-      const product = (products as any[]).find(
-        (p: any) => p._id.toString() === rate.productId.toString()
-      )
-      if (!product) continue
-
-      const variant = product.variants.find((v: any) => v.variantId === rate.variantId)
-      if (!variant) continue
-
-      const bd = variant.branchDetails.find((b: any) => b.branchId.toString() === branchId)
-      const qty = rate.dailyQty || 1
-
-      if (!bd || bd.stockLevel < qty) {
-        const available = bd?.stockLevel ?? 0
-        stockIssues.push(`${product.name}: need ${qty}, have ${available}`)
-      }
+    if (product.isPooled) {
+      const pool = product.pooledStock?.find((p: any) => p.branchId.toString() === branchId)
+      const portion = variant.portionSize || 1
+      const available = pool ? Math.floor((pool.stockQty / portion) * 100) / 100 : 0
+      return { name: product.name, available }
     }
 
-    return { ...log, stockOk: stockIssues.length === 0, stockIssues }
+    const bd = variant.branchDetails.find((b: any) => b.branchId.toString() === branchId)
+    return { name: product.name, available: bd?.stockLevel ?? 0 }
+  }
+
+  const logsWithStock = logs.map((log: any) => {
+    const rates = (log.customerId as any)?.paikariConfig?.fixedProductRates ?? []
+    const stockInfo = rates.map((rate: any) => {
+      const { name, available } = availableFor(rate)
+      return { productId: rate.productId, variantId: rate.variantId, name, available }
+    })
+
+    if (log.status !== 'pending') return { ...log, stockOk: true, stockIssues: [], stockInfo }
+
+    const stockIssues: string[] = []
+    stockInfo.forEach((s: any, i: number) => {
+      const need = rates[i].dailyQty || 1
+      if (s.available < need) stockIssues.push(`${s.name}: need ${need}, have ${s.available}`)
+    })
+
+    return { ...log, stockOk: stockIssues.length === 0, stockIssues, stockInfo }
   })
 
   return NextResponse.json(logsWithStock)
@@ -114,7 +130,7 @@ export async function PATCH(req: NextRequest) {
     id: string
   }
 
-  const { branchId, date, customerId, status, paymentType, cashPaid } = await req.json()
+  const { branchId, date, customerId, status, paymentType, cashPaid, items: qtyOverrides } = await req.json()
 
   if (!branchId || !customerId || !status) {
     return NextResponse.json({ error: 'branchId, customerId, status are required' }, { status: 400 })
@@ -160,25 +176,91 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'No regular order configured for this customer' }, { status: 400 })
   }
 
+  // Quantity can flex day-to-day (shop may take more/less than the standing order),
+  // but price ALWAYS comes from the customer's locked config server-side — never trust
+  // a client-supplied rate. Unmatched productId/variantId pairs are silently dropped.
+  let dispatchList: Array<{ productId: any; variantId: string; lockedRate: number; qty: number }>
+
+  if (Array.isArray(qtyOverrides) && qtyOverrides.length > 0) {
+    dispatchList = qtyOverrides
+      .map((o: any) => {
+        const cfg = rates.find(
+          (r: any) => r.productId.toString() === o.productId && r.variantId === o.variantId
+        )
+        const qty = Number(o.quantity)
+        if (!cfg || !qty || qty <= 0) return null
+        return { productId: cfg.productId, variantId: cfg.variantId, lockedRate: cfg.lockedRate, qty }
+      })
+      .filter((x: any): x is NonNullable<typeof x> => x !== null)
+  } else {
+    dispatchList = rates.map((r: any) => ({
+      productId: r.productId, variantId: r.variantId, lockedRate: r.lockedRate, qty: r.dailyQty || 1
+    }))
+  }
+
+  if (dispatchList.length === 0) {
+    return NextResponse.json({ error: 'No dispatchable items — adjust quantity or configure a regular order' }, { status: 400 })
+  }
+
   const { default: Product } = await import('@/models/Product')
   const { default: Transaction } = await import('@/models/Transaction')
 
   let totalBill = 0
+  let totalCOGS = 0
   const processedItems: any[] = []
 
-  for (const rate of rates) {
+  for (const rate of dispatchList) {
     const product = await Product.findById(rate.productId)
     if (!product) continue
 
     const variant = product.variants.find((v: any) => v.variantId === rate.variantId)
     if (!variant) continue
 
+    const qty = rate.qty
+
+    // ── Pooled mode: deduct from the shared tank ──────────────────────────────
+    if (product.isPooled) {
+      const poolEntry = product.pooledStock.find(
+        (p: any) => p.branchId.toString() === branchId
+      )
+      if (!poolEntry) {
+        return NextResponse.json(
+          { error: `Pool stock not configured for ${product.name}` },
+          { status: 400 }
+        )
+      }
+
+      const portion = variant.portionSize ?? 1
+      const totalDeduction = portion * qty
+
+      if (poolEntry.stockQty < totalDeduction) {
+        return NextResponse.json(
+          { error: `Insufficient pool stock for ${product.name} (need ${totalDeduction}, have ${poolEntry.stockQty})` },
+          { status: 400 }
+        )
+      }
+
+      poolEntry.stockQty = Math.max(0, poolEntry.stockQty - totalDeduction)
+      await product.save()
+
+      totalBill += rate.lockedRate * qty
+      totalCOGS += (poolEntry.buyingPrice ?? 0) * totalDeduction
+
+      processedItems.push({
+        productId: rate.productId,
+        variantId: rate.variantId,
+        quantity: qty,
+        rateApplied: rate.lockedRate,
+        isCustomOverride: false
+      })
+      continue
+    }
+
+    // ── Normal mode: deduct from variant branchDetail ─────────────────────────
     const branchDetail = variant.branchDetails.find(
       (bd: any) => bd.branchId.toString() === branchId
     )
     if (!branchDetail) continue
-
-    const qty = (rate as any).dailyQty || 1
 
     if (branchDetail.stockLevel < qty) {
       return NextResponse.json(
@@ -190,6 +272,7 @@ export async function PATCH(req: NextRequest) {
     branchDetail.stockLevel -= qty
     await product.save()
     totalBill += rate.lockedRate * qty
+    totalCOGS += branchDetail.buyingPrice * qty
 
     processedItems.push({
       productId: rate.productId,
@@ -204,6 +287,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'No dispatchable items found for this branch' }, { status: 400 })
   }
 
+  const netProfitAmount = totalBill - totalCOGS
   const cash = pType === 'cash' ? totalBill : pType === 'partial' ? Math.min(Number(cashPaid), totalBill) : 0
   const addedToKhata = totalBill - cash
   const txType = pType === 'cash' ? 'Cash Sale' : pType === 'partial' ? 'Partial Payment' : 'Credit Sale'
@@ -224,15 +308,23 @@ export async function PATCH(req: NextRequest) {
       totalBill,
       cashPaid: cash,
       amountAddedToKhata: addedToKhata,
-      netProfitAmount: 0
+      netProfitAmount
     },
     notes: 'Regular order'
   })
+
+  // Update pre-computed daily summary (non-blocking) — same pattern as /api/transactions
+  updateDailySummary(branchId, effectiveDate).catch(() => {})
 
   log.status = 'taken'
   log.transactionId = transaction._id
   log.updatedBy = userId as any
   await log.save()
 
-  return NextResponse.json({ log, transaction })
+  const result = transaction.toObject()
+  if (role === 'MANAGER') {
+    delete (result.financials as any).netProfitAmount
+  }
+
+  return NextResponse.json({ log, transaction: result })
 }

@@ -23,6 +23,7 @@ interface User {
 
 interface Props {
   role: Role
+  assignedBranches: string[]
 }
 
 const ROLE_COLORS: Record<Role, string> = {
@@ -31,7 +32,7 @@ const ROLE_COLORS: Record<Role, string> = {
   MANAGER: 'bg-slate-700 text-slate-400'
 }
 
-export default function UserManager({ role: actorRole }: Props) {
+export default function UserManager({ role: actorRole, assignedBranches: actorBranches }: Props) {
   const [users, setUsers] = useState<User[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,6 +72,12 @@ export default function UserManager({ role: actorRole }: Props) {
 
   function branchName(id: string) {
     return branches.find((b) => b._id === id)?.name ?? `…${id.slice(-4)}`
+  }
+
+  // Mirrors the backend's getActorAndTarget rule: a branch admin can edit/deactivate
+  // managers, but never a fellow admin (or themselves) — only super admin can.
+  function canManage(user: User) {
+    return actorRole === 'SUPER_ADMIN' || user.role === 'MANAGER'
   }
 
   return (
@@ -148,22 +155,24 @@ export default function UserManager({ role: actorRole }: Props) {
                     </span>
                   </td>
                   <td>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setModal(user)}
-                        className="p-1.5 text-slate-500 hover:text-slate-100 hover:bg-slate-700 rounded transition-colors"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(user)}
-                        className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-900/20 rounded transition-colors"
-                        title="Deactivate"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {canManage(user) && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setModal(user)}
+                          className="p-1.5 text-slate-500 hover:text-slate-100 hover:bg-slate-700 rounded transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(user)}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-900/20 rounded transition-colors"
+                          title="Deactivate"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -175,6 +184,7 @@ export default function UserManager({ role: actorRole }: Props) {
       {modal && (
         <UserModal
           actorRole={actorRole}
+          actorBranches={actorBranches}
           branches={branches}
           user={modal === 'create' ? null : modal}
           onClose={() => setModal(null)}
@@ -197,30 +207,49 @@ export default function UserManager({ role: actorRole }: Props) {
 
 function UserModal({
   actorRole,
+  actorBranches,
   branches,
   user,
   onClose,
   onSave
 }: {
   actorRole: Role
+  actorBranches: string[]
   branches: Branch[]
   user: User | null
   onClose: () => void
   onSave: () => void
 }) {
+  // A branch admin operates on exactly one branch in practice — never show them
+  // a picker or let them know other branches exist. Falls back to a picker only
+  // in the unusual case a branch admin is assigned to more than one branch.
+  const isBranchAdmin = actorRole === 'BRANCH_ADMIN'
+  const needsBranchPicker = !isBranchAdmin || branches.length !== 1
+
+  // A branch admin's own branch(es) — applies regardless of which non-SUPER_ADMIN role
+  // is being created, so switching between Manager/Admin never loses the auto-fill.
+  function defaultBranchesFor(targetRole: Role) {
+    if (targetRole === 'SUPER_ADMIN') return []
+    if (isBranchAdmin && branches.length === 1) return [branches[0]._id]
+    if (isBranchAdmin) return actorBranches
+    return []
+  }
+
   const [name, setName] = useState(user?.name ?? '')
   const [phone, setPhone] = useState(user?.phone ?? '')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [role, setRole] = useState<Role>(user?.role ?? 'MANAGER')
-  const [selectedBranches, setSelectedBranches] = useState<string[]>(user?.assignedBranches ?? [])
+  const [selectedBranches, setSelectedBranches] = useState<string[]>(
+    user?.assignedBranches ?? defaultBranchesFor(role)
+  )
   const [phoneError, setPhoneError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const availableRoles: Role[] =
     actorRole === 'SUPER_ADMIN'
       ? ['SUPER_ADMIN', 'BRANCH_ADMIN', 'MANAGER']
-      : ['MANAGER']
+      : ['MANAGER', 'BRANCH_ADMIN']
 
   function validatePhone(value: string) {
     if (value && !/^01[3-9]\d{8}$/.test(value)) {
@@ -346,8 +375,9 @@ function UserModal({
               className="input-base"
               value={role}
               onChange={(e) => {
-                setRole(e.target.value as Role)
-                setSelectedBranches([])
+                const newRole = e.target.value as Role
+                setRole(newRole)
+                setSelectedBranches(defaultBranchesFor(newRole))
               }}
             >
               {availableRoles.map((r) => (
@@ -358,7 +388,7 @@ function UserModal({
             </select>
           </div>
 
-          {role !== 'SUPER_ADMIN' && (
+          {role !== 'SUPER_ADMIN' && needsBranchPicker && (
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">
                 {role === 'MANAGER' ? 'Branch *' : 'Assigned Branches *'}

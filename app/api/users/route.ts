@@ -9,7 +9,8 @@ import type { Role } from '@/types'
 
 // GET /api/users
 // SUPER_ADMIN: all users
-// BRANCH_ADMIN: managers of their branches + themselves (never reveals other admins/branches)
+// BRANCH_ADMIN: managers + fellow admins of their own branches, plus themselves
+//               (never reveals SUPER_ADMIN or admins/branches outside their own)
 // MANAGER: 403
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -30,11 +31,10 @@ export async function GET(req: NextRequest) {
   let filter: Record<string, unknown> = {}
 
   if (role === 'BRANCH_ADMIN') {
-    // Sees only managers in their branches + themselves — no super admins or other admins revealed
     filter = {
       $or: [
         { _id: id },
-        { role: 'MANAGER', assignedBranches: { $in: assignedBranches } }
+        { role: { $in: ['MANAGER', 'BRANCH_ADMIN'] }, assignedBranches: { $in: assignedBranches } }
       ]
     }
   }
@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(users)
 }
 
-// POST /api/users — SUPER_ADMIN creates any role; BRANCH_ADMIN creates MANAGER for their branches only
+// POST /api/users — SUPER_ADMIN creates any role; BRANCH_ADMIN creates MANAGER or a fellow
+// BRANCH_ADMIN, both scoped to their own branches only. BRANCH_ADMIN can never create SUPER_ADMIN.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -72,18 +73,19 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // BRANCH_ADMIN can only create MANAGERs for their own branches
+  // BRANCH_ADMIN can only create MANAGER or BRANCH_ADMIN, for their own branches only
   if (actor.role === 'BRANCH_ADMIN') {
-    if (role !== 'MANAGER') {
+    if (role !== 'MANAGER' && role !== 'BRANCH_ADMIN') {
       return NextResponse.json(
-        { error: 'Branch admins can only create managers' },
+        { error: 'Branch admins can only create managers or admins' },
         { status: 403 }
       )
     }
+    // Generic message on purpose — never hint that other branches exist to be denied from
     const allowed = assignedBranches.every((b) => actor.assignedBranches.includes(b))
     if (!allowed) {
       return NextResponse.json(
-        { error: 'Cannot assign manager to branches you do not manage' },
+        { error: 'Forbidden' },
         { status: 403 }
       )
     }

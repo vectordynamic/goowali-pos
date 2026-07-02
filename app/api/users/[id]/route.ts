@@ -51,15 +51,16 @@ export async function PATCH(
 
   const { name, phone, password, role, assignedBranches, isActive } = parsed.data
 
-  // BRANCH_ADMIN cannot elevate role or assign to unmanaged branches
+  // BRANCH_ADMIN cannot elevate role or assign to branches outside their own —
+  // generic message on purpose, never hints that other branches exist
   if (actor.role === 'BRANCH_ADMIN') {
     if (role && role !== 'MANAGER') {
-      return NextResponse.json({ error: 'Cannot change role' }, { status: 403 })
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     if (assignedBranches) {
       const allowed = assignedBranches.every((b) => actor.assignedBranches.includes(b))
       if (!allowed) {
-        return NextResponse.json({ error: 'Cannot assign to unmanaged branches' }, { status: 403 })
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
     }
   }

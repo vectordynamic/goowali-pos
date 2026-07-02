@@ -12,10 +12,10 @@ export default async function UsersPage() {
         <p className="text-slate-400 text-sm mt-0.5">
           {session?.user.role === 'SUPER_ADMIN'
             ? 'Manage all users and roles system-wide'
-            : 'Manage managers for your branches'}
+            : 'Manage your team'}
         </p>
       </div>
-      <UserManager role={session!.user.role} />
+      <UserManager role={session!.user.role} assignedBranches={session!.user.assignedBranches} />
     </div>
   )
 }

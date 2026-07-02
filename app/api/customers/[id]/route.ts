@@ -26,10 +26,11 @@ export async function GET(
   const customer = await Customer.findById(id).lean()
   if (!customer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // BRANCH_ADMIN/MANAGER can only view customers from their branches — 404 to avoid existence leak
+  // BRANCH_ADMIN/MANAGER can only view customers from their branches — 404 to avoid existence leak.
+  // Fail closed: a customer with no registeredBranch is treated as inaccessible, not as unrestricted.
   const cust = customer as any
-  if (role !== 'SUPER_ADMIN' && cust.registeredBranch) {
-    if (!assignedBranches.includes(cust.registeredBranch.toString())) {
+  if (role !== 'SUPER_ADMIN') {
+    if (!cust.registeredBranch || !assignedBranches.includes(cust.registeredBranch.toString())) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
   }
@@ -60,10 +61,19 @@ export async function PATCH(
   const existing = await Customer.findById(id)
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Branch access check — 404 to avoid existence leak
-  if (role !== 'SUPER_ADMIN' && (existing as any).registeredBranch) {
-    if (!assignedBranches.includes((existing as any).registeredBranch.toString())) {
+  // Branch access check — 404 to avoid existence leak. Fail closed: no registeredBranch means
+  // no access, not open access.
+  if (role !== 'SUPER_ADMIN') {
+    const existingBranch = (existing as any).registeredBranch
+    if (!existingBranch || !assignedBranches.includes(existingBranch.toString())) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
+    // Can't reassign a customer to a branch outside what you manage — otherwise a branch
+    // admin could move a customer they own into a branch they don't (or vice versa).
+    // Generic message on purpose — never hints that other branches exist.
+    if (parsed.data.registeredBranch && !assignedBranches.includes(parsed.data.registeredBranch)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
   }
 
@@ -125,6 +135,11 @@ async function handleDispatch(
 
   const customer = await Customer.findById(customerId)
   if (!customer || customer.customerType !== 'Paikari') {
+    return NextResponse.json({ error: 'Paikari customer not found' }, { status: 404 })
+  }
+  // The branchId in the request must actually be this customer's registered branch —
+  // otherwise a manager could dispatch stock against another branch's customer.
+  if (customer.registeredBranch?.toString() !== branchId) {
     return NextResponse.json({ error: 'Paikari customer not found' }, { status: 404 })
   }
 
@@ -204,6 +219,11 @@ async function handleDueCollection(
 
   const customer = await Customer.findById(customerId)
   if (!customer) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+  // Same cross-branch guard as dispatch — don't let a due collection be recorded against
+  // a customer registered to a different branch than the one in the request.
+  if (customer.registeredBranch?.toString() !== branchId) {
+    return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+  }
 
   customer.khata.currentDue = Math.max(0, customer.khata.currentDue - amountCollected)
   customer.khata.lastPaymentDate = new Date()
@@ -250,6 +270,9 @@ async function handleAutoDispatch(
 
   const customer = await Customer.findById(customerId)
   if (!customer || customer.customerType !== 'Paikari') {
+    return NextResponse.json({ error: 'Paikari customer not found' }, { status: 404 })
+  }
+  if (customer.registeredBranch?.toString() !== branchId) {
     return NextResponse.json({ error: 'Paikari customer not found' }, { status: 404 })
   }
 

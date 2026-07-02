@@ -15,7 +15,7 @@ export default async function CustomersPage() {
         <p className="text-slate-400 text-sm mt-1">
           {session.user.role === 'SUPER_ADMIN'
             ? 'All customers across all branches'
-            : 'Customers registered to your branches'}
+            : 'Customers registered to your branch'}
         </p>
       </div>
 

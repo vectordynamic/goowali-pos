@@ -12,7 +12,7 @@ export default async function RegularOrdersPage() {
   if (role === 'MANAGER') redirect('/login')
 
   return (
-    <div>
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-slate-100">Regular Orders</h1>
         <p className="text-slate-400 text-sm mt-1">

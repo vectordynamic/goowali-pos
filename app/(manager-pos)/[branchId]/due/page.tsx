@@ -27,7 +27,7 @@ export default async function DuePageRoute({
           <h1 className="text-2xl font-black text-gray-800">বাকির তালিকা</h1>
           <p className="text-gray-500 mt-1">কাস্টমারের কাছ থেকে বাকি আদায় করুন</p>
         </div>
-        <DuePage role={role} assignedBranches={assignedBranches} forceBranchId={branchId} />
+        <DuePage role={role} assignedBranches={assignedBranches} forceBranchId={branchId} lightMode />
       </div>
     </div>
   )

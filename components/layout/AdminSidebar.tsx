@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
@@ -14,10 +15,12 @@ import {
   ClipboardList,
   Wallet,
   History,
-  LayoutDashboard
+  LayoutDashboard,
+  KeyRound
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
+import ChangePasswordModal from '@/components/admin/ChangePasswordModal'
 
 interface Branch {
   _id: string
@@ -44,6 +47,7 @@ const adminNavItems = [
 
 export default function AdminSidebar({ role, assignedBranches, branchList = [] }: Props) {
   const pathname = usePathname()
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
 
   const visibleItems = adminNavItems.filter((item) => item.roles.includes(role))
 
@@ -127,8 +131,15 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
         )}
       </nav>
 
-      {/* Sign out */}
-      <div className="px-2 py-3 border-t border-slate-800">
+      {/* Account */}
+      <div className="px-2 py-3 border-t border-slate-800 space-y-0.5">
+        <button
+          onClick={() => setShowPasswordModal(true)}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+        >
+          <KeyRound className="w-4 h-4" />
+          Change Password
+        </button>
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-rose-400 hover:bg-rose-900/20 transition-colors"
@@ -137,6 +148,10 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
           Sign Out
         </button>
       </div>
+
+      {showPasswordModal && (
+        <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+      )}
     </aside>
   )
 }

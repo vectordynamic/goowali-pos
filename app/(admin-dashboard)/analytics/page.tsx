@@ -12,7 +12,7 @@ export default async function AnalyticsPage() {
         <p className="text-slate-400 text-sm mt-0.5">
           {session?.user.role === 'SUPER_ADMIN'
             ? 'Global performance across all branches'
-            : 'Performance for your assigned branches'}
+            : 'Performance for your branch'}
         </p>
       </div>
       <AnalyticsDashboard role={session!.user.role} />

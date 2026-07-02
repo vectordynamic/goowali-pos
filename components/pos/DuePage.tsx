@@ -25,11 +25,12 @@ interface Props {
   role: Role
   assignedBranches: string[]
   forceBranchId?: string
+  lightMode?: boolean
 }
 
 type DueTab = 'Retail' | 'Paikari'
 
-export default function DuePage({ role, assignedBranches, forceBranchId }: Props) {
+export default function DuePage({ role, assignedBranches, forceBranchId, lightMode }: Props) {
   const [activeTab, setActiveTab] = useState<DueTab>('Retail')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
@@ -70,6 +71,60 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
     setCustomers((prev) => prev.filter((c) => c._id !== customerId))
   }
 
+  const t = lightMode
+    ? {
+        tabInactive: 'bg-white border-gray-200 text-gray-500 hover:border-gray-300',
+        filterPanel: 'bg-white border border-gray-200 rounded-2xl p-3 shadow-sm',
+        searchIcon: 'text-gray-400',
+        searchInput: 'linput pl-12',
+        select: 'linput w-48',
+        refreshBtn: 'p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors',
+        totalLabel: 'text-gray-500 font-bold',
+        loadingText: 'text-gray-400',
+        emptyCard: 'text-center py-16 lcard',
+        emptyIcon: 'text-gray-300',
+        emptyTitle: 'text-gray-600',
+        emptySub: 'text-gray-400',
+        card: 'bg-white border border-gray-200 rounded-2xl shadow-sm',
+        ring: 'ring-blue-200',
+        nameText: 'text-gray-800',
+        branchBadge: 'bg-gray-100 text-gray-500',
+        phoneText: 'text-gray-500',
+        phoneIcon: 'text-gray-400',
+        toggleClosed: 'bg-gray-200 text-gray-600',
+        formWrap: 'border-t border-gray-100 bg-gray-50',
+        label: 'text-gray-600',
+        amountInput: 'border-gray-300 text-gray-800 bg-white focus:border-blue-400',
+        partialMsg: 'text-amber-600 bg-amber-50 border-amber-200',
+        fullMsg: 'text-green-600 bg-green-50 border-green-200',
+      }
+    : {
+        tabInactive: 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600',
+        filterPanel: 'bg-slate-900 border border-slate-800 rounded-2xl p-3',
+        searchIcon: 'text-slate-500',
+        searchInput: 'input-base pl-12',
+        select: 'input-base w-48',
+        refreshBtn: 'p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-900/20 rounded-xl transition-colors',
+        totalLabel: 'text-slate-400 font-bold',
+        loadingText: 'text-slate-500',
+        emptyCard: 'text-center py-16 bg-slate-900 border border-slate-800 rounded-2xl',
+        emptyIcon: 'text-slate-700',
+        emptyTitle: 'text-slate-400',
+        emptySub: 'text-slate-600',
+        card: 'bg-slate-900 border border-slate-800 rounded-2xl',
+        ring: 'ring-blue-500/40',
+        nameText: 'text-slate-100',
+        branchBadge: 'bg-slate-800 text-slate-400',
+        phoneText: 'text-slate-400',
+        phoneIcon: 'text-slate-500',
+        toggleClosed: 'bg-slate-700 text-slate-300',
+        formWrap: 'border-t border-slate-800 bg-slate-800/50',
+        label: 'text-slate-400',
+        amountInput: 'border-slate-700 text-slate-100 bg-slate-800 focus:border-blue-500',
+        partialMsg: 'text-amber-400 bg-amber-900/20 border-amber-800/50',
+        fullMsg: 'text-green-400 bg-green-900/20 border-green-800/50',
+      }
+
   return (
     <div>
       {/* Tabs */}
@@ -81,7 +136,7 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
             className={`px-5 py-2.5 text-base font-bold rounded-xl transition-colors border-2 ${
               activeTab === tab
                 ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                : t.tabInactive
             }`}
           >
             {tab === 'Paikari' ? 'পাইকারি' : 'খুচরা'}
@@ -90,11 +145,11 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-4 bg-white border border-gray-200 rounded-2xl p-3 shadow-sm">
+      <div className={`flex flex-wrap items-center gap-3 mb-4 ${t.filterPanel}`}>
         <div className="relative flex-1 min-w-[160px]">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 ${t.searchIcon}`} />
           <input
-            className="linput pl-12"
+            className={t.searchInput}
             placeholder="নাম বা ফোন খুঁজুন..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -103,7 +158,7 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
 
         {showBranchFilter && branches.length > 1 && (
           <select
-            className="linput w-48"
+            className={t.select}
             value={branchFilter}
             onChange={(e) => setBranchFilter(e.target.value)}
           >
@@ -114,7 +169,7 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
           </select>
         )}
 
-        <button onClick={load} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors">
+        <button onClick={load} className={t.refreshBtn}>
           <RefreshCw className="w-5 h-5" />
         </button>
 
@@ -122,18 +177,18 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
           <div className="ml-auto flex items-center gap-2">
             <Wallet className="w-5 h-5 text-red-500" />
             <span className="text-lg font-black text-red-500">{formatCurrency(totalDue)}</span>
-            <span className="text-gray-500 font-bold">মোট বাকি</span>
+            <span className={t.totalLabel}>মোট বাকি</span>
           </div>
         )}
       </div>
 
       {loading ? (
-        <div className="text-center text-gray-400 py-12 text-lg">লোড হচ্ছে...</div>
+        <div className={`text-center py-12 text-lg ${t.loadingText}`}>লোড হচ্ছে...</div>
       ) : customers.length === 0 ? (
-        <div className="text-center py-16 lcard">
-          <Wallet className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-lg font-bold text-gray-600">কোনো বাকি নেই</p>
-          <p className="text-gray-400 mt-1">
+        <div className={t.emptyCard}>
+          <Wallet className={`w-12 h-12 mx-auto mb-3 ${t.emptyIcon}`} />
+          <p className={`text-lg font-bold ${t.emptyTitle}`}>কোনো বাকি নেই</p>
+          <p className={`mt-1 ${t.emptySub}`}>
             সব {activeTab === 'Retail' ? 'খুচরা' : 'পাইকারি'} কাস্টমারের বাকি পরিশোধ হয়েছে
           </p>
         </div>
@@ -146,6 +201,7 @@ export default function DuePage({ role, assignedBranches, forceBranchId }: Props
               branchLabel={showBranchFilter ? branchName(c.registeredBranch) : undefined}
               branchId={forceBranchId || branchFilter || assignedBranches[0] || ''}
               onCollected={() => handleCollected(c._id)}
+              t={t}
             />
           ))}
         </div>
@@ -159,11 +215,13 @@ function DueRow({
   branchLabel,
   branchId,
   onCollected,
+  t,
 }: {
   customer: Customer
   branchLabel?: string
   branchId: string
   onCollected: () => void
+  t: Record<string, string>
 }) {
   const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState(String(customer.khata.currentDue))
@@ -199,19 +257,19 @@ function DueRow({
   }
 
   return (
-    <div className={`lcard overflow-hidden transition-all ${open ? 'ring-2 ring-blue-200' : ''}`}>
+    <div className={`overflow-hidden transition-all ${t.card} ${open ? `ring-2 ${t.ring}` : ''}`}>
       {/* Main row — always visible */}
       <div className="flex items-center gap-3 px-4 py-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-base font-black text-gray-800">{customer.name}</span>
+            <span className={`text-base font-black ${t.nameText}`}>{customer.name}</span>
             {branchLabel && (
-              <span className="text-sm text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg">{branchLabel}</span>
+              <span className={`text-sm px-2 py-0.5 rounded-lg ${t.branchBadge}`}>{branchLabel}</span>
             )}
           </div>
           {customer.phone && (
-            <div className="flex items-center gap-1 text-sm text-gray-500 mt-0.5">
-              <Phone className="w-3.5 h-3.5" />
+            <div className={`flex items-center gap-1 text-sm mt-0.5 ${t.phoneText}`}>
+              <Phone className={`w-3.5 h-3.5 ${t.phoneIcon}`} />
               {customer.phone}
             </div>
           )}
@@ -224,9 +282,7 @@ function DueRow({
         <button
           onClick={() => setOpen((o) => !o)}
           className={`flex-shrink-0 px-4 py-2 text-base font-bold rounded-xl transition-colors ${
-            open
-              ? 'bg-gray-200 text-gray-600'
-              : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+            open ? t.toggleClosed : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
           }`}
         >
           {open ? 'বন্ধ করুন' : 'আদায়'}
@@ -235,15 +291,15 @@ function DueRow({
 
       {/* Inline collect form — no modal */}
       {open && (
-        <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-gray-50 space-y-3">
+        <div className={`px-4 pb-4 pt-1 space-y-3 ${t.formWrap}`}>
           <div className="flex items-end gap-2">
             <div className="flex-1">
-              <label className="text-sm font-bold text-gray-600 block mb-1.5">
+              <label className={`text-sm font-bold block mb-1.5 ${t.label}`}>
                 কত টাকা নিলেন? (৳)
               </label>
               <input
                 type="number"
-                className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-xl font-black text-gray-800 bg-white focus:outline-none focus:border-blue-400"
+                className={`w-full border-2 rounded-xl px-4 py-3 text-xl font-black focus:outline-none ${t.amountInput}`}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min={1}
@@ -261,12 +317,12 @@ function DueRow({
           </div>
 
           {Number(amount) > 0 && Number(amount) < customer.khata.currentDue && (
-            <p className="text-base font-bold text-amber-600 bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-200">
+            <p className={`text-base font-bold rounded-xl px-4 py-2.5 border ${t.partialMsg}`}>
               আংশিক — {formatCurrency(remaining)} এখনো বাকি থাকবে
             </p>
           )}
           {Number(amount) >= customer.khata.currentDue && Number(amount) > 0 && (
-            <p className="text-base font-bold text-green-600 bg-green-50 rounded-xl px-4 py-2.5 border border-green-200">
+            <p className={`text-base font-bold rounded-xl px-4 py-2.5 border ${t.fullMsg}`}>
               ✓ সম্পূর্ণ — বাকি শেষ হয়ে যাবে
             </p>
           )}
