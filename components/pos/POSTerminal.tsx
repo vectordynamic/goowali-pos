@@ -45,6 +45,7 @@ interface CartItem {
   stockLevel: number
   isPooled?: boolean
   portionSize?: number
+  isOpenLoose?: boolean
 }
 
 export interface CustomerSuggestion {
@@ -214,26 +215,37 @@ export default function POSTerminal({ branchId }: Props) {
         mrpPrice,
         stockLevel: stockAvailable,
         isPooled: product.isPooled,
-        portionSize
+        portionSize,
+        isOpenLoose: product.isOpenLoose
       }]
     })
   }
 
-  function updateQty(key: string, delta: number) {
+  function qtyStep(item: CartItem) {
+    return item.isOpenLoose ? 0.5 : 1
+  }
+
+  function applyQty(key: string, newQty: number) {
     setCart((prev) =>
       prev.map((i) => {
         if (`${i.productId}:${i.variantId}` === key) {
-          const newQty = Math.max(0, i.quantity + delta)
-          const requiredStock = i.isPooled && i.portionSize ? newQty * i.portionSize : newQty
+          const clamped = Math.max(0, Math.round(newQty * 10) / 10)
+          const requiredStock = i.isPooled && i.portionSize ? clamped * i.portionSize : clamped
           if (requiredStock > i.stockLevel) {
             toast.error('যথেষ্ট স্টক নেই')
             return i
           }
-          return { ...i, quantity: newQty }
+          return { ...i, quantity: clamped }
         }
         return i
       }).filter((i) => i.quantity > 0)
     )
+  }
+
+  function updateQty(key: string, delta: number) {
+    const item = cart.find((i) => `${i.productId}:${i.variantId}` === key)
+    if (!item) return
+    applyQty(key, item.quantity + delta)
   }
 
   function clearCustomer() {
@@ -456,11 +468,21 @@ export default function POSTerminal({ branchId }: Props) {
                 }
                 const inStock = totalStock > 0
                 const variantCount = product.variants.length
+                const onlyVariant = variantCount === 1 ? product.variants[0] : null
+                const onlyVariantPrice = onlyVariant?.branchDetails.find(b => b.branchId === branchId)?.mrpPrice ?? 0
 
                 return (
                   <button
                     key={product._id}
-                    onClick={() => setSelectedProduct(product)}
+                    onClick={() => {
+                      if (!inStock) return
+                      if (onlyVariant) {
+                        addToCart(product, onlyVariant)
+                        toast.success(`${product.name} যোগ হয়েছে ✓`)
+                      } else {
+                        setSelectedProduct(product)
+                      }
+                    }}
                     className={`rounded-2xl p-4 text-left transition-all border-2 shadow-sm flex flex-col ${
                       inStock
                         ? 'bg-white border-gray-200 hover:border-blue-400 hover:bg-blue-50 active:scale-95'
@@ -477,7 +499,13 @@ export default function POSTerminal({ branchId }: Props) {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500 mb-2 mt-auto">{variantCount} ভেরিয়েন্ট</p>
+                    {onlyVariant ? (
+                      onlyVariantPrice > 0 && (
+                        <p className="text-lg font-black text-blue-600 mb-2 mt-auto">৳{onlyVariantPrice}</p>
+                      )
+                    ) : (
+                      <p className="text-sm text-gray-500 mb-2 mt-auto">{variantCount} ভেরিয়েন্ট</p>
+                    )}
                     {inStock ? (
                       <span className="inline-block bg-green-100 text-green-700 text-sm font-semibold px-2 py-0.5 rounded-lg mt-1">
                         {product.isPooled ? `ট্যাংক: ${totalStock}` : `মোট আছে: ${totalStock}`}
@@ -710,14 +738,25 @@ export default function POSTerminal({ branchId }: Props) {
 
                     <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
                       <button
-                        onClick={() => updateQty(key, -1)}
+                        onClick={() => updateQty(key, -qtyStep(item))}
                         className="w-6 h-6 rounded bg-white shadow-sm flex items-center justify-center text-gray-700 hover:text-blue-600 active:scale-95 transition-all"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="w-8 text-center text-sm font-bold text-gray-800">{item.quantity}</span>
+                      {item.isOpenLoose ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={item.quantity}
+                          onChange={(e) => applyQty(key, Number(e.target.value))}
+                          className="w-12 text-center text-sm font-bold text-gray-800 bg-transparent focus:outline-none"
+                        />
+                      ) : (
+                        <span className="w-8 text-center text-sm font-bold text-gray-800">{item.quantity}</span>
+                      )}
                       <button
-                        onClick={() => updateQty(key, 1)}
+                        onClick={() => updateQty(key, qtyStep(item))}
                         className="w-6 h-6 rounded bg-white shadow-sm flex items-center justify-center text-gray-700 hover:text-blue-600 active:scale-95 transition-all"
                       >
                         <Plus className="w-3.5 h-3.5" />

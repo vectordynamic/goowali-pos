@@ -17,9 +17,12 @@ interface Product {
   _id: string
   name: string
   category?: string
+  isPooled?: boolean
+  pooledStock?: Array<{ branchId: string }>
   variants: Array<{
     variantId: string
     sizeLabel?: string
+    branchDetails?: Array<{ branchId: string }>
   }>
 }
 
@@ -242,16 +245,32 @@ function RegularOrderModal({
   onClose: () => void
   onSave: () => void
 }) {
+  // Only offer products/variants actually configured (priced) for this customer's own
+  // branch — the raw `products` list is fetched globally (?all=1) and includes every
+  // branch's catalog, which was confusing admins into picking a product not even sold
+  // at this customer's branch.
+  const branchId = customer.registeredBranch ?? ''
+  const branchProducts: Product[] = branchId
+    ? products
+        .map((p) => ({
+          ...p,
+          variants: p.variants.filter((v) =>
+            v.branchDetails?.some((bd) => bd.branchId === branchId)
+          )
+        }))
+        .filter((p) => p.variants.length > 0)
+    : products
+
   function normalizeRates(raw: FixedRate[]): FixedRate[] {
     return raw.map((r) => ({
       ...r,
-      variantId: r.variantId || products.find((p) => p._id === r.productId)?.variants[0]?.variantId || '',
+      variantId: r.variantId || branchProducts.find((p) => p._id === r.productId)?.variants[0]?.variantId || '',
       dailyQty: r.dailyQty ?? 1
     }))
   }
 
   const defaultProduct =
-    products.find((p) => p.name.toLowerCase().includes('milk')) ?? products[0]
+    branchProducts.find((p) => p.name.toLowerCase().includes('milk')) ?? branchProducts[0]
 
   const [rates, setRates] = useState<FixedRate[]>(
     customer.paikariConfig?.fixedProductRates?.length > 0
@@ -269,7 +288,7 @@ function RegularOrderModal({
   const [submitting, setSubmitting] = useState(false)
 
   function addRow() {
-    const p = products[0]
+    const p = branchProducts[0]
     setRates((prev) => [...prev, {
       productId: p?._id ?? '',
       variantId: p?.variants[0]?.variantId ?? '',
@@ -287,7 +306,7 @@ function RegularOrderModal({
   }
 
   function getVariants(productId: string) {
-    return products.find((p) => p._id === productId)?.variants ?? []
+    return branchProducts.find((p) => p._id === productId)?.variants ?? []
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -307,7 +326,7 @@ function RegularOrderModal({
 
     const missingVariant = validRates.find((r) => !r.variantId)
     if (missingVariant) {
-      const name = products.find((p) => p._id === missingVariant.productId)?.name ?? 'a product'
+      const name = branchProducts.find((p) => p._id === missingVariant.productId)?.name ?? 'a product'
       toast.error(`"${name}" has no variant set up — edit the product first and add a variant`)
       return
     }
@@ -393,12 +412,19 @@ function RegularOrderModal({
               <button
                 type="button"
                 onClick={addRow}
-                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                disabled={branchProducts.length === 0}
+                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-40 disabled:hover:text-blue-400"
               >
                 <Plus className="w-3 h-3" />
                 Add product
               </button>
             </div>
+
+            {branchProducts.length === 0 && (
+              <p className="text-xs text-rose-400 italic mb-2">
+                No products are priced for this customer's branch yet — add pricing on the Products page first.
+              </p>
+            )}
 
             <div className="space-y-3">
               {rates.map((rate, idx) => {
@@ -410,7 +436,7 @@ function RegularOrderModal({
                         className="input-base flex-1 text-sm"
                         value={rate.productId}
                         onChange={(e) => {
-                          const p = products.find((p) => p._id === e.target.value)
+                          const p = branchProducts.find((p) => p._id === e.target.value)
                           updateRow(idx, {
                             productId: e.target.value,
                             variantId: p?.variants[0]?.variantId ?? ''
@@ -418,7 +444,7 @@ function RegularOrderModal({
                         }}
                       >
                         <option value="">Select product…</option>
-                        {products.map((p) => (
+                        {branchProducts.map((p) => (
                           <option key={p._id} value={p._id}>{p.name}</option>
                         ))}
                       </select>

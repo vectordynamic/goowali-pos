@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { TrendingUp, TrendingDown, Check, MessageSquare } from 'lucide-react'
+import { TrendingUp, TrendingDown, CheckCircle2, MessageSquare, Lock } from 'lucide-react'
 import { formatCurrency, today } from '@/lib/utils'
 
 interface SystemTotals {
@@ -18,12 +18,6 @@ interface PhysicalStockEntry {
   variantId: string
   physicalQty: number
   systemQty: number
-}
-
-interface StockReason {
-  productId: string
-  variantId: string
-  reason: string
 }
 
 interface PreOrderEntry {
@@ -65,34 +59,20 @@ const STOCK_REASON_THRESHOLD = 1   // 1 unit (L / kg / pcs)
 export default function ZReport({ branchId }: { branchId: string }) {
   const [dayStatus, setDayStatus] = useState<string | null>(null)
   const [systemTotals, setSystemTotals] = useState<SystemTotals | null>(null)
-  const [savedNightCash, setSavedNightCash] = useState<number | null>(null)
-  const [savedPhysicalStock, setSavedPhysicalStock] = useState<PhysicalStockEntry[]>([])
-  const [savedPreOrders, setSavedPreOrders] = useState<PreOrderEntry[]>([])
   const [yesterdayPreOrders, setYesterdayPreOrders] = useState<PreOrderEntry[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
+  const [justFinished, setJustFinished] = useState(false)
 
-  // Night cash
+  // Everything below is just a local draft — nothing is sent to the server
+  // until the one "দিন শেষ করুন" button at the bottom is pressed.
   const [nightCash, setNightCash] = useState('')
-  const [savingCash, setSavingCash] = useState(false)
-
-  // Cash reason (shown when |gap| > ৳30)
   const [cashReason, setCashReason] = useState('')
-  const [savedCashReason, setSavedCashReason] = useState<string | null>(null)
-  const [savingCashReason, setSavingCashReason] = useState(false)
-
-  // Physical stock: productId:variantId → qty string
   const [stockInputs, setStockInputs] = useState<Record<string, string>>({})
-  const [savingStock, setSavingStock] = useState(false)
-
-  // Stock reasons per key: productId:variantId → reason string
   const [stockReasons, setStockReasons] = useState<Record<string, string>>({})
-  const [savedStockReasons, setSavedStockReasons] = useState<Record<string, string>>({})
-  const [savingStockReason, setSavingStockReason] = useState<Record<string, boolean>>({})
-
-  // Pre-orders
   const [preOrderInputs, setPreOrderInputs] = useState<Record<string, string>>({})
-  const [savingPreOrders, setSavingPreOrders] = useState(false)
+
+  const [finishing, setFinishing] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -103,35 +83,20 @@ export default function ZReport({ branchId }: { branchId: string }) {
         setDayStatus((closing?.status ?? 'Pending').toLowerCase())
         setSystemTotals(closing?.mathematicalSystemTotals ?? null)
 
-        if (closing?.nightCashCounted != null) {
-          setSavedNightCash(closing.nightCashCounted)
-          setNightCash(String(closing.nightCashCounted))
-        }
-
-        if (closing?.cashCheckReason) {
-          setSavedCashReason(closing.cashCheckReason)
-          setCashReason(closing.cashCheckReason)
-        }
+        if (closing?.nightCashCounted != null) setNightCash(String(closing.nightCashCounted))
+        if (closing?.cashCheckReason) setCashReason(closing.cashCheckReason)
 
         const physStock: PhysicalStockEntry[] = closing?.physicalStock ?? []
-        setSavedPhysicalStock(physStock)
         const stockInit: Record<string, string> = {}
         physStock.forEach((e) => { stockInit[`${e.productId}:${e.variantId}`] = String(e.physicalQty) })
         setStockInputs(stockInit)
 
-        const stockReasonInit: Record<string, string> = {}
-        const stockReasonSavedInit: Record<string, string> = {}
-        const reasons: StockReason[] = closing?.stockCheckReasons ?? []
-        reasons.forEach((r) => {
-          const k = `${r.productId}:${r.variantId}`
-          stockReasonInit[k] = r.reason
-          stockReasonSavedInit[k] = r.reason
-        })
-        setStockReasons(stockReasonInit)
-        setSavedStockReasons(stockReasonSavedInit)
+        const reasonInit: Record<string, string> = {}
+        const reasons: { productId: string; variantId: string; reason: string }[] = closing?.stockCheckReasons ?? []
+        reasons.forEach((r) => { reasonInit[`${r.productId}:${r.variantId}`] = r.reason })
+        setStockReasons(reasonInit)
 
         const preOrders: PreOrderEntry[] = closing?.tomorrowPreOrders ?? []
-        setSavedPreOrders(preOrders)
         const preInit: Record<string, string> = {}
         preOrders.forEach((e) => { preInit[`${e.productId}:${e.variantId}`] = String(e.quantity) })
         setPreOrderInputs(preInit)
@@ -144,35 +109,6 @@ export default function ZReport({ branchId }: { branchId: string }) {
       .finally(() => setLoading(false))
   }, [branchId])
 
-  // ── Night cash ──
-  async function saveNightCash() {
-    const val = Number(nightCash)
-    if (isNaN(val) || val < 0) { toast.error('সঠিক পরিমাণ দিন'); return }
-    setSavingCash(true)
-    const res = await fetch('/api/daily-closing', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ branchId, date: today(), action: 'nightCash', nightCash: val }),
-    })
-    setSavingCash(false)
-    if (res.ok) { setSavedNightCash(val); toast.success('রাতের ক্যাশ সেভ হয়েছে ✓') }
-    else toast.error('সেভ হয়নি')
-  }
-
-  // ── Cash reason ──
-  async function saveCashReason() {
-    setSavingCashReason(true)
-    const res = await fetch('/api/daily-closing', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ branchId, date: today(), action: 'cashReason', reason: cashReason }),
-    })
-    setSavingCashReason(false)
-    if (res.ok) { setSavedCashReason(cashReason || null); toast.success('কারণ সেভ হয়েছে ✓') }
-    else toast.error('সেভ হয়নি')
-  }
-
-  // ── Physical stock ──
   function getSystemStock(product: Product, variantId: string) {
     if (product.isPooled && variantId === 'pooled') {
       const ps = product.pooledStock?.find((b) => b.branchId === branchId)
@@ -183,110 +119,127 @@ export default function ZReport({ branchId }: { branchId: string }) {
     return bd?.stockLevel ?? 0
   }
 
-  async function savePhysicalStock() {
-    const entries: PhysicalStockEntry[] = []
-    for (const product of products) {
-      if (product.isPooled) {
-        const key = `${product._id}:pooled`
-        const raw = stockInputs[key]
-        if (raw !== undefined && raw !== '') {
-          entries.push({
-            productId: product._id,
-            variantId: 'pooled',
-            physicalQty: Number(raw),
-            systemQty: getSystemStock(product, 'pooled'),
-          })
-        }
-      } else {
-        for (const variant of product.variants) {
-          const key = `${product._id}:${variant.variantId}`
-          const raw = stockInputs[key]
-          if (raw === undefined || raw === '') continue
-          entries.push({
-            productId: product._id,
-            variantId: variant.variantId,
-            physicalQty: Number(raw),
-            systemQty: getSystemStock(product, variant.variantId),
-          })
-        }
-      }
-    }
-    setSavingStock(true)
-    const res = await fetch('/api/daily-closing', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ branchId, date: today(), action: 'physicalStock', physicalStock: entries }),
-    })
-    setSavingStock(false)
-    if (res.ok) { setSavedPhysicalStock(entries); toast.success('স্টক চেক সেভ হয়েছে ✓') }
-    else toast.error('সেভ হয়নি')
-  }
-
-  // ── Stock reason ──
-  async function saveStockReason(productId: string, variantId: string) {
-    const key = `${productId}:${variantId}`
-    setSavingStockReason((p) => ({ ...p, [key]: true }))
-    const res = await fetch('/api/daily-closing', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        branchId, date: today(), action: 'stockReason',
-        productId, variantId, reason: stockReasons[key] ?? '',
-      }),
-    })
-    setSavingStockReason((p) => ({ ...p, [key]: false }))
-    if (res.ok) {
-      setSavedStockReasons((p) => ({ ...p, [key]: stockReasons[key] ?? '' }))
-      toast.success('কারণ সেভ হয়েছে ✓')
-    } else {
-      toast.error('সেভ হয়নি')
-    }
-  }
-
-  // ── Pre-orders ──
   const milkProducts = products.filter((p) => p.name.toLowerCase().includes('milk') || p.productCode?.toLowerCase() === 'milk')
 
-  async function savePreOrders() {
-    const entries: PreOrderEntry[] = []
-    for (const product of milkProducts) {
-      if (product.isPooled) {
-        const key = `${product._id}:pooled`
-        const raw = preOrderInputs[key]
-        if (raw && Number(raw) > 0) {
-          entries.push({
-            productId: product._id,
-            variantId: 'pooled',
-            productName: product.name,
-            quantity: Number(raw),
-          })
-        }
-      } else {
-        for (const variant of product.variants) {
-          const key = `${product._id}:${variant.variantId}`
-          const raw = preOrderInputs[key]
-          if (!raw || Number(raw) <= 0) continue
-          entries.push({
-            productId: product._id,
-            variantId: variant.variantId,
-            productName: `${product.name}${variant.sizeLabel ? ' ' + variant.sizeLabel : ''}`,
-            quantity: Number(raw),
-          })
-        }
+  // ── The one button: save everything as a single action, then lock the day ──
+  async function finishDay() {
+    if (nightCash === '' || isNaN(Number(nightCash)) || Number(nightCash) < 0) {
+      toast.error('রাতে ক্যাশে কত টাকা আছে লিখুন')
+      return
+    }
+
+    setFinishing(true)
+
+    const physicalStock: PhysicalStockEntry[] = []
+    for (const product of products) {
+      const items = product.isPooled
+        ? [{ key: `${product._id}:pooled`, variantId: 'pooled' }]
+        : product.variants.map((v) => ({ key: `${product._id}:${v.variantId}`, variantId: v.variantId }))
+      for (const item of items) {
+        const raw = stockInputs[item.key]
+        if (raw === undefined || raw === '') continue
+        physicalStock.push({
+          productId: product._id,
+          variantId: item.variantId,
+          physicalQty: Number(raw),
+          systemQty: getSystemStock(product, item.variantId),
+        })
       }
     }
-    setSavingPreOrders(true)
-    const res = await fetch('/api/daily-closing', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ branchId, date: today(), action: 'preOrders', preOrders: entries }),
-    })
-    setSavingPreOrders(false)
-    if (res.ok) { setSavedPreOrders(entries); toast.success('অর্ডার সেভ হয়েছে ✓') }
-    else toast.error('সেভ হয়নি')
+
+    const preOrders: PreOrderEntry[] = []
+    for (const product of milkProducts) {
+      const items = product.isPooled
+        ? [{ key: `${product._id}:pooled`, variantId: 'pooled' }]
+        : product.variants.map((v) => ({ key: `${product._id}:${v.variantId}`, variantId: v.variantId, sizeLabel: v.sizeLabel }))
+      for (const item of items) {
+        const raw = preOrderInputs[item.key]
+        if (!raw || Number(raw) <= 0) continue
+        const sizeLabel = 'sizeLabel' in item ? item.sizeLabel : undefined
+        preOrders.push({
+          productId: product._id,
+          variantId: item.variantId,
+          productName: `${product.name}${sizeLabel ? ' ' + sizeLabel : ''}`,
+          quantity: Number(raw),
+        })
+      }
+    }
+
+    const remainingMilkStock = physicalStock
+      .filter((e) => milkProducts.some((p) => p._id === e.productId))
+      .reduce((s, e) => s + e.physicalQty, 0)
+
+    try {
+      // Fire every draft field as one batch, then lock the day.
+      await Promise.all([
+        fetch('/api/daily-closing', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ branchId, date: today(), action: 'nightCash', nightCash: Number(nightCash) }),
+        }),
+        cashReason
+          ? fetch('/api/daily-closing', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ branchId, date: today(), action: 'cashReason', reason: cashReason }),
+            })
+          : Promise.resolve(),
+        physicalStock.length > 0
+          ? fetch('/api/daily-closing', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ branchId, date: today(), action: 'physicalStock', physicalStock }),
+            })
+          : Promise.resolve(),
+        preOrders.length > 0
+          ? fetch('/api/daily-closing', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ branchId, date: today(), action: 'preOrders', preOrders }),
+            })
+          : Promise.resolve(),
+        ...Object.entries(stockReasons)
+          .filter(([, reason]) => reason)
+          .map(([key, reason]) => {
+            const [productId, variantId] = key.split(':')
+            return fetch('/api/daily-closing', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ branchId, date: today(), action: 'stockReason', productId, variantId, reason }),
+            })
+          }),
+      ])
+
+      const lockRes = await fetch('/api/daily-closing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branchId,
+          date: today(),
+          physicalCashCounted: Number(nightCash),
+          remainingMilkStock,
+        }),
+      })
+
+      if (!lockRes.ok) {
+        const err = await lockRes.json()
+        toast.error(err.error ?? 'দিন শেষ করা যায়নি')
+        setFinishing(false)
+        return
+      }
+
+      setJustFinished(true)
+      setDayStatus('locked')
+      toast.success('দিনের হিসাব শেষ হয়েছে ✓')
+    } catch {
+      toast.error('হিসাব সেভ করা যায়নি, আবার চেষ্টা করুন')
+    } finally {
+      setFinishing(false)
+    }
   }
 
   const expected = systemTotals?.expectedDrawerCash ?? 0
-  const nightCashNum = savedNightCash
+  const nightCashNum = nightCash !== '' && !isNaN(Number(nightCash)) ? Number(nightCash) : null
   const cashDiff = nightCashNum !== null ? nightCashNum - expected : null
   const cashShort = cashDiff !== null && cashDiff < 0
   const cashBalanced = cashDiff !== null && cashDiff === 0
@@ -302,7 +255,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
     return <div className="text-center text-gray-400 py-16 text-lg">লোড হচ্ছে...</div>
   }
 
-  // ── Day not started: show friendly message ──
+  // ── Day not started ──
   if (dayStatus === 'pending') {
     return (
       <div className="flex flex-col items-center justify-center py-20 space-y-4">
@@ -313,7 +266,30 @@ export default function ZReport({ branchId }: { branchId: string }) {
         </div>
         <h2 className="text-xl font-black text-gray-700">আজকের দিন এখনো শুরু হয়নি</h2>
         <p className="text-gray-500 text-sm text-center max-w-xs">
-          রিপোর্ট দেখতে বা হিসাব বন্ধ করতে প্রথমে বিক্রি পেজ থেকে “দিন শুরু করুন” করুন।
+          রিপোর্ট দেখতে বা হিসাব বন্ধ করতে প্রথমে বিক্রি পেজ থেকে "দিন শুরু করুন" করুন।
+        </p>
+        <a
+          href={`/${branchId}/pos`}
+          className="mt-2 flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors"
+        >
+          ← বিক্রি পেজে যান
+        </a>
+      </div>
+    )
+  }
+
+  // ── Day already closed ──
+  if (dayStatus === 'locked') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+          <Lock className="w-8 h-8 text-green-600" />
+        </div>
+        <h2 className="text-xl font-black text-gray-700">
+          {justFinished ? 'আজকের হিসাব শেষ হয়েছে ✓' : 'আজকের হিসাব বন্ধ করা হয়েছে'}
+        </h2>
+        <p className="text-gray-500 text-sm text-center max-w-xs">
+          আগামীকাল আবার "দিন শুরু করুন" করে বিক্রি শুরু করতে পারবেন।
         </p>
         <a
           href={`/${branchId}/pos`}
@@ -326,9 +302,9 @@ export default function ZReport({ branchId }: { branchId: string }) {
   }
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="space-y-6 w-full pb-4">
 
-      {/* ── Section 1: রাতের ক্যাশ চেক ── */}
+      {/* ── রাতের ক্যাশ চেক ── */}
       <div className="lcard overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
           <p className="text-lg font-black text-gray-800">রাতের ক্যাশ চেক</p>
@@ -336,7 +312,6 @@ export default function ZReport({ branchId }: { branchId: string }) {
         </div>
 
         <div className="p-5 space-y-4">
-          {/* System summary */}
           {systemTotals && (
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-green-50 border border-green-200 rounded-2xl p-3 text-center">
@@ -359,32 +334,20 @@ export default function ZReport({ branchId }: { branchId: string }) {
             <span className="text-2xl font-black text-blue-700">{formatCurrency(expected)}</span>
           </div>
 
-          {/* Night cash input */}
           <div>
             <label className="text-base font-black text-gray-700 block mb-2">
               রাতে ক্যাশে কত টাকা আছে? (৳)
             </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                min="0"
-                className="flex-1 border-2 border-gray-300 rounded-xl px-4 py-3 text-2xl font-black text-gray-800 bg-white focus:outline-none focus:border-blue-400"
-                placeholder="০"
-                value={nightCash}
-                onChange={(e) => setNightCash(e.target.value)}
-              />
-              <button
-                onClick={saveNightCash}
-                disabled={savingCash}
-                className="flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl transition-colors disabled:opacity-40"
-              >
-                <Check className="w-5 h-5" />
-                {savingCash ? 'সেভ...' : 'সেভ'}
-              </button>
-            </div>
+            <input
+              type="number"
+              min="0"
+              className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-2xl font-black text-gray-800 bg-white focus:outline-none focus:border-blue-400"
+              placeholder="০"
+              value={nightCash}
+              onChange={(e) => setNightCash(e.target.value)}
+            />
           </div>
 
-          {/* Comparison result */}
           {nightCashNum !== null && (
             <div className={`flex items-center justify-between rounded-2xl px-5 py-4 border-2 ${
               cashBalanced ? 'bg-green-50 border-green-200' :
@@ -413,17 +376,11 @@ export default function ZReport({ branchId }: { branchId: string }) {
             </div>
           )}
 
-          {/* Cash reason box — only when |gap| > ৳30 */}
           {showCashReason && (
-            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-3">
+            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-orange-500" />
-                <p className="text-sm font-black text-orange-700">
-                  কারণ কি? (ঐচ্ছিক)
-                </p>
-                <span className="text-xs text-orange-500 ml-auto">
-                  {Math.abs(cashDiff!).toFixed(0)} টাকার পার্থক্য আছে
-                </span>
+                <p className="text-sm font-black text-orange-700">কারণ কি? (ঐচ্ছিক)</p>
               </div>
               <textarea
                 rows={2}
@@ -432,25 +389,12 @@ export default function ZReport({ branchId }: { branchId: string }) {
                 value={cashReason}
                 onChange={(e) => setCashReason(e.target.value)}
               />
-              <div className="flex items-center justify-between">
-                {savedCashReason && (
-                  <p className="text-xs text-green-600 font-bold">✓ কারণ সেভ আছে</p>
-                )}
-                <button
-                  onClick={saveCashReason}
-                  disabled={savingCashReason}
-                  className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-sm transition-colors disabled:opacity-40"
-                >
-                  <Check className="w-4 h-4" />
-                  {savingCashReason ? 'সেভ...' : 'কারণ সেভ করুন'}
-                </button>
-              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* ── Section 2: স্টক চেক ── */}
+      {/* ── স্টক চেক ── */}
       <div className="lcard overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
           <p className="text-lg font-black text-gray-800">স্টক চেক</p>
@@ -516,60 +460,31 @@ export default function ZReport({ branchId }: { branchId: string }) {
                         </div>
                       </div>
 
-                      {/* Stock reason box — only when |gap| > 1 unit */}
                       {showReasonBox && (
                         <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 ml-2 space-y-2">
                           <div className="flex items-center gap-1.5">
                             <MessageSquare className="w-3.5 h-3.5 text-orange-500" />
                             <p className="text-sm font-black text-orange-700">কারণ কি? (ঐচ্ছিক)</p>
-                            {savedStockReasons[item.key] && (
-                              <span className="text-xs text-green-600 font-bold ml-auto">✓ সেভ আছে</span>
-                            )}
                           </div>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              className="flex-1 border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-orange-400 placeholder-gray-400"
-                              placeholder="কেন পার্থক্য হলো? লিখুন..."
-                              value={stockReasons[item.key] ?? ''}
-                              onChange={(e) => setStockReasons((p) => ({ ...p, [item.key]: e.target.value }))}
-                            />
-                            <button
-                              onClick={() => saveStockReason(product._id, item.variantId)}
-                              disabled={!!savingStockReason[item.key]}
-                              className="flex items-center gap-1 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg text-sm transition-colors disabled:opacity-40 whitespace-nowrap"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              {savingStockReason[item.key] ? '...' : 'সেভ'}
-                            </button>
-                          </div>
+                          <input
+                            type="text"
+                            className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-orange-400 placeholder-gray-400"
+                            placeholder="কেন পার্থক্য হলো? লিখুন..."
+                            value={stockReasons[item.key] ?? ''}
+                            onChange={(e) => setStockReasons((p) => ({ ...p, [item.key]: e.target.value }))}
+                          />
                         </div>
                       )}
                     </div>
                   )
                 })
               })}
-
-              <button
-                onClick={savePhysicalStock}
-                disabled={savingStock}
-                className="lbtn-success w-full flex items-center justify-center gap-2 mt-2"
-              >
-                <Check className="w-5 h-5" />
-                {savingStock ? 'সেভ হচ্ছে...' : 'স্টক চেক সেভ করুন'}
-              </button>
-
-              {savedPhysicalStock.length > 0 && (
-                <p className="text-sm text-green-600 font-bold text-center">
-                  ✓ সর্বশেষ চেক সেভ হয়েছে
-                </p>
-              )}
             </>
           )}
         </div>
       </div>
 
-      {/* ── Section 3: সরবরাহকারীকে কালকের অর্ডার ── */}
+      {/* ── সরবরাহকারীকে কালকের অর্ডার ── */}
       {milkProducts.length > 0 && (
         <div className="lcard overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
@@ -642,25 +557,22 @@ export default function ZReport({ branchId }: { branchId: string }) {
                 <span className="text-2xl font-black text-blue-700">{totalPreOrders.toFixed(1)} L</span>
               </div>
             )}
-
-            <button
-              onClick={savePreOrders}
-              disabled={savingPreOrders}
-              className="lbtn-primary w-full flex items-center justify-center gap-2"
-            >
-              <Check className="w-5 h-5" />
-              {savingPreOrders ? 'সেভ হচ্ছে...' : 'অর্ডার সেভ করুন'}
-            </button>
-
-            {savedPreOrders.length > 0 && (
-              <p className="text-sm text-green-600 font-bold text-center">
-                ✓ অর্ডার সেভ হয়েছে
-              </p>
-            )}
           </div>
         </div>
       )}
 
+      {/* ── One button: save everything and close the day ── */}
+      <button
+        onClick={finishDay}
+        disabled={finishing}
+        className="w-full py-5 rounded-2xl text-xl font-black text-white transition-all shadow-lg disabled:opacity-50 bg-green-600 hover:bg-green-700 active:scale-95 flex items-center justify-center gap-3"
+      >
+        {finishing ? (
+          <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> সেভ হচ্ছে...</>
+        ) : (
+          <><CheckCircle2 className="w-6 h-6" /> দিন শেষ করুন</>
+        )}
+      </button>
     </div>
   )
 }
