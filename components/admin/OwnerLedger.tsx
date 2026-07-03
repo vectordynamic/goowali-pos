@@ -108,6 +108,20 @@ export default function OwnerLedger({ role, branches, assignedBranches }: Props)
   const totalWithdrawn = withdrawals.reduce((s, w) => s + w.financials.totalBill, 0)
   const totalOwnerPurchases = purchases.reduce((s, p) => s + p.financials.totalBill, 0)
 
+  // Per-admin breakdown — who took/funded how much, at a glance, instead of scanning every row.
+  const byAdmin = (() => {
+    const map = new Map<string, { name: string; withdrawn: number; purchased: number }>()
+    const bump = (owner: OwnerRef, field: 'withdrawn' | 'purchased', amount: number) => {
+      if (!owner) return
+      const entry = map.get(owner._id) ?? { name: owner.name, withdrawn: 0, purchased: 0 }
+      entry[field] += amount
+      map.set(owner._id, entry)
+    }
+    withdrawals.forEach((w) => bump(w.ownerId, 'withdrawn', w.financials.totalBill))
+    purchases.forEach((p) => bump(p.ownerId, 'purchased', p.financials.totalBill))
+    return [...map.values()].sort((a, b) => (b.withdrawn + b.purchased) - (a.withdrawn + a.purchased))
+  })()
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -188,6 +202,42 @@ export default function OwnerLedger({ role, branches, assignedBranches }: Props)
         <div className="text-center py-20 text-slate-400">Loading…</div>
       ) : (
         <>
+          {/* By admin — net balance, not just raw totals. Withdrawal = admin took store cash
+              (admin owes the store). Owner-funded purchase = admin put in their own money
+              (store owes the admin). Net = withdrawn - purchased settles the two against
+              each other, so it's clear who owes whom, not just two disconnected numbers. */}
+          {byAdmin.length > 0 && (
+            <section>
+              <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-3">By Admin</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {byAdmin.map((a) => {
+                  const net = a.withdrawn - a.purchased
+                  const settled = net === 0
+                  const adminOwesStore = net > 0
+                  return (
+                    <div key={a.name} className="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
+                      <p className="text-sm font-bold text-slate-200 mb-2">{a.name}</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-purple-400">Withdrawn</span>
+                        <span className="font-black text-purple-300">{formatCurrency(a.withdrawn)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm mt-1">
+                        <span className="text-amber-500">Funded stock</span>
+                        <span className="font-black text-amber-400">{formatCurrency(a.purchased)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-slate-700">
+                        <span className="text-slate-400">{settled ? 'Settled' : adminOwesStore ? 'Owes the shop' : 'Shop owes'}</span>
+                        <span className={`font-black ${settled ? 'text-green-400' : adminOwesStore ? 'text-red-400' : 'text-blue-400'}`}>
+                          {settled ? '✓' : formatCurrency(Math.abs(net))}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Withdrawals */}
           <section>
             <div className="flex items-center gap-3 mb-3">
