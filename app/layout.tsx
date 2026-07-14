@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Toaster } from 'react-hot-toast'
 import SessionProvider from '@/components/providers/SessionProvider'
+import QueryProvider from '@/components/providers/QueryProvider'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -13,17 +14,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-screen bg-[#0a0a0f] text-slate-100 antialiased" suppressHydrationWarning>
         <SessionProvider>
-          {children}
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              style: {
-                background: '#1e2230',
-                color: '#e2e8f0',
-                border: '1px solid #334155'
-              }
-            }}
-          />
+          <QueryProvider>
+            {children}
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                style: {
+                  background: '#1e2230',
+                  color: '#e2e8f0',
+                  border: '1px solid #334155'
+                }
+              }}
+            />
+          </QueryProvider>
         </SessionProvider>
       </body>
     </html>

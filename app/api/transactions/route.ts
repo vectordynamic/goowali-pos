@@ -43,10 +43,14 @@ export async function GET(req: NextRequest) {
     filter.createdAt = { $gte: start, $lt: end }
   }
 
+  // Safety cap — this is already date+branch scoped in practice (a single day's transactions),
+  // but had no explicit limit at all; 1000 is a ceiling against a pathological case, not a real
+  // page size for the common one-day view.
   const transactions = await Transaction.find(filter)
     .populate('customerId', 'name phone')
     .populate('recordedBy', 'name')
     .sort({ createdAt: -1 })
+    .limit(1000)
     .lean()
 
   const sanitized = stripSensitiveTransactionData(transactions, role)
@@ -90,12 +94,23 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Batch-fetch every unique product referenced by the cart in one query instead of one
+  // sequential findById per item. Items are still validated in the same order as before
+  // (same error messages, same abort-on-first-failure behavior), but since nothing is
+  // saved until every item has validated, a checkout that fails partway through (e.g. item
+  // 3 of 5 is out of stock) no longer leaves items 1-2's stock partially deducted with no
+  // rollback the way the old per-item find-then-save loop did.
+  const uniqueProductIds = [...new Set(items.map((i) => i.productId))]
+  const products = await Product.find({ _id: { $in: uniqueProductIds } })
+  const productMap = new Map(products.map((p) => [p._id.toString(), p]))
+  const touchedProductIds = new Set<string>()
+
   let subtotal = 0
   let totalCOGS = 0
   const processedItems = []
 
   for (const item of items) {
-    const product = await Product.findById(item.productId)
+    const product = productMap.get(item.productId)
     if (!product) {
       return NextResponse.json({ error: `Product ${item.productId} not found` }, { status: 404 })
     }
@@ -138,7 +153,7 @@ export async function POST(req: NextRequest) {
       totalCOGS += (poolEntry.buyingPrice ?? 0) * totalDeduction
 
       poolEntry.stockQty = Math.max(0, poolEntry.stockQty - totalDeduction)
-      await product.save()
+      touchedProductIds.add(product._id.toString())
 
       processedItems.push({
         productId: item.productId,
@@ -171,7 +186,7 @@ export async function POST(req: NextRequest) {
     totalCOGS += branchDetail.buyingPrice * item.quantity
 
     branchDetail.stockLevel -= item.quantity
-    await product.save()
+    touchedProductIds.add(product._id.toString())
 
     processedItems.push({
       productId: item.productId,
@@ -181,6 +196,10 @@ export async function POST(req: NextRequest) {
       isCustomOverride: false
     })
   }
+
+  // All items validated — persist every touched product's stock change in parallel
+  // (previously N sequential saves, one per item, awaited one at a time).
+  await Promise.all([...touchedProductIds].map((id) => productMap.get(id)!.save()))
 
   // Discount applied at sale level; profit = final bill - COGS
   const totalBill = Math.max(0, subtotal - discount)

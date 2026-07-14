@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { TrendingUp, TrendingDown, CheckCircle2, MessageSquare, Lock } from 'lucide-react'
 import { formatCurrency, today } from '@/lib/utils'
+import { useProducts } from '@/lib/queries/useProducts'
+import { useDailyClosing } from '@/lib/queries/useDailyClosing'
 
 interface SystemTotals {
   openingCash: number
@@ -57,11 +60,10 @@ const CASH_REASON_THRESHOLD = 30   // ৳30
 const STOCK_REASON_THRESHOLD = 1   // 1 unit (L / kg / pcs)
 
 export default function ZReport({ branchId }: { branchId: string }) {
-  const [dayStatus, setDayStatus] = useState<string | null>(null)
-  const [systemTotals, setSystemTotals] = useState<SystemTotals | null>(null)
-  const [yesterdayPreOrders, setYesterdayPreOrders] = useState<PreOrderEntry[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const todayDate = today()
+  const closingKey = ['daily-closing', branchId, todayDate]
+
   const [justFinished, setJustFinished] = useState(false)
 
   // Everything below is just a local draft — nothing is sent to the server
@@ -71,43 +73,53 @@ export default function ZReport({ branchId }: { branchId: string }) {
   const [stockInputs, setStockInputs] = useState<Record<string, string>>({})
   const [stockReasons, setStockReasons] = useState<Record<string, string>>({})
   const [preOrderInputs, setPreOrderInputs] = useState<Record<string, string>>({})
+  // Tracks which branch's data the draft fields above were last seeded from.
+  const [seededFor, setSeededFor] = useState<string | null>(null)
 
   const [finishing, setFinishing] = useState(false)
 
+  // ── Shared cache with POSTerminal (same branch+date) and StockManager/DailyOrders
+  // (product catalog) — see lib/queries/*.
+  const { data: closingData, isLoading: closingLoading, isError: closingErrored } = useDailyClosing(branchId, todayDate)
+  const { data: productsData, isLoading: productsLoading } = useProducts(branchId)
+  const products: Product[] = productsData ?? []
+  const loading = closingLoading || productsLoading
+
+  const dayStatus: string | null = closingLoading ? null : (closingData?.status ?? 'Pending').toLowerCase()
+  const systemTotals: SystemTotals | null = closingData?.mathematicalSystemTotals ?? null
+  const yesterdayPreOrders: PreOrderEntry[] = closingData?.yesterdayPreOrders ?? []
+
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/daily-closing?branchId=${branchId}&date=${today()}`).then((r) => r.json()),
-      fetch(`/api/products?branchId=${branchId}`).then((r) => r.json()),
-    ])
-      .then(([closing, prods]) => {
-        setDayStatus((closing?.status ?? 'Pending').toLowerCase())
-        setSystemTotals(closing?.mathematicalSystemTotals ?? null)
+    if (closingErrored) toast.error('হিসাব লোড হয়নি')
+  }, [closingErrored])
 
-        if (closing?.nightCashCounted != null) setNightCash(String(closing.nightCashCounted))
-        if (closing?.cashCheckReason) setCashReason(closing.cashCheckReason)
+  // Seed the local draft fields from the server exactly once per branch+day — never again
+  // automatically, so a background refetch (window refocus, or this same cache key getting
+  // invalidated by a sale on POSTerminal) can't silently overwrite a manager's in-progress,
+  // unsaved Z-Report edits.
+  useEffect(() => {
+    if (!closingData || seededFor === branchId) return
 
-        const physStock: PhysicalStockEntry[] = closing?.physicalStock ?? []
-        const stockInit: Record<string, string> = {}
-        physStock.forEach((e) => { stockInit[`${e.productId}:${e.variantId}`] = String(e.physicalQty) })
-        setStockInputs(stockInit)
+    if (closingData.nightCashCounted != null) setNightCash(String(closingData.nightCashCounted))
+    if (closingData.cashCheckReason) setCashReason(closingData.cashCheckReason)
 
-        const reasonInit: Record<string, string> = {}
-        const reasons: { productId: string; variantId: string; reason: string }[] = closing?.stockCheckReasons ?? []
-        reasons.forEach((r) => { reasonInit[`${r.productId}:${r.variantId}`] = r.reason })
-        setStockReasons(reasonInit)
+    const physStock: PhysicalStockEntry[] = closingData.physicalStock ?? []
+    const stockInit: Record<string, string> = {}
+    physStock.forEach((e) => { stockInit[`${e.productId}:${e.variantId}`] = String(e.physicalQty) })
+    setStockInputs(stockInit)
 
-        const preOrders: PreOrderEntry[] = closing?.tomorrowPreOrders ?? []
-        const preInit: Record<string, string> = {}
-        preOrders.forEach((e) => { preInit[`${e.productId}:${e.variantId}`] = String(e.quantity) })
-        setPreOrderInputs(preInit)
+    const reasonInit: Record<string, string> = {}
+    const reasons: { productId: string; variantId: string; reason: string }[] = closingData.stockCheckReasons ?? []
+    reasons.forEach((r) => { reasonInit[`${r.productId}:${r.variantId}`] = r.reason })
+    setStockReasons(reasonInit)
 
-        setYesterdayPreOrders(closing?.yesterdayPreOrders ?? [])
+    const preOrders: PreOrderEntry[] = closingData.tomorrowPreOrders ?? []
+    const preInit: Record<string, string> = {}
+    preOrders.forEach((e) => { preInit[`${e.productId}:${e.variantId}`] = String(e.quantity) })
+    setPreOrderInputs(preInit)
 
-        if (Array.isArray(prods)) setProducts(prods)
-      })
-      .catch(() => toast.error('হিসাব লোড হয়নি'))
-      .finally(() => setLoading(false))
-  }, [branchId])
+    setSeededFor(branchId)
+  }, [closingData, seededFor, branchId])
 
   function getSystemStock(product: Product, variantId: string) {
     if (product.isPooled && variantId === 'pooled') {
@@ -119,7 +131,10 @@ export default function ZReport({ branchId }: { branchId: string }) {
     return bd?.stockLevel ?? 0
   }
 
-  const milkProducts = products.filter((p) => p.name.toLowerCase().includes('milk') || p.productCode?.toLowerCase() === 'milk')
+  const milkProducts = useMemo(
+    () => products.filter((p) => p.name.toLowerCase().includes('milk') || p.productCode?.toLowerCase() === 'milk'),
+    [products]
+  )
 
   // ── The one button: save everything as a single action, then lock the day ──
   async function finishDay() {
@@ -198,16 +213,23 @@ export default function ZReport({ branchId }: { branchId: string }) {
               body: JSON.stringify({ branchId, date: today(), action: 'preOrders', preOrders }),
             })
           : Promise.resolve(),
-        ...Object.entries(stockReasons)
-          .filter(([, reason]) => reason)
-          .map(([key, reason]) => {
-            const [productId, variantId] = key.split(':')
-            return fetch('/api/daily-closing', {
+        Object.entries(stockReasons).some(([, reason]) => reason)
+          ? fetch('/api/daily-closing', {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ branchId, date: today(), action: 'stockReason', productId, variantId, reason }),
+              body: JSON.stringify({
+                branchId,
+                date: today(),
+                action: 'stockReasons',
+                reasons: Object.entries(stockReasons)
+                  .filter(([, reason]) => reason)
+                  .map(([key, reason]) => {
+                    const [productId, variantId] = key.split(':')
+                    return { productId, variantId, reason }
+                  }),
+              }),
             })
-          }),
+          : Promise.resolve(),
       ])
 
       const lockRes = await fetch('/api/daily-closing', {
@@ -228,8 +250,8 @@ export default function ZReport({ branchId }: { branchId: string }) {
         return
       }
 
+      await queryClient.invalidateQueries({ queryKey: closingKey })
       setJustFinished(true)
-      setDayStatus('locked')
       toast.success('দিনের হিসাব শেষ হয়েছে ✓')
     } catch {
       toast.error('হিসাব সেভ করা যায়নি, আবার চেষ্টা করুন')

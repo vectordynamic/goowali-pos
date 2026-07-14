@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Plus, Pencil, X, MapPin, Phone, GitBranch, RefreshCw, PowerOff } from 'lucide-react'
 import ConfirmModal from '@/components/ui/ConfirmModal'
+import { useBranches } from '@/lib/queries/useBranches'
 
 interface Branch {
   _id: string
@@ -15,21 +17,19 @@ interface Branch {
 }
 
 export default function BranchManager() {
-  const [branches, setBranches] = useState<Branch[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  // This page is the write-side of the branch list — every mutation below invalidates the
+  // shared ['branches'] cache so BranchReport/ProductManager/CustomerManager/etc. (every
+  // other component reading useBranches()) see new/edited/deactivated branches immediately
+  // instead of waiting out the staleTime window.
+  const { data: branchesData, isLoading: loading } = useBranches()
+  const branches: Branch[] = branchesData ?? []
   const [modal, setModal] = useState<null | 'create' | Branch>(null)
   const [toggleTarget, setToggleTarget] = useState<Branch | null>(null)
 
   function load() {
-    setLoading(true)
-    fetch('/api/branches')
-      .then((r) => r.json())
-      .then((data) => setBranches(Array.isArray(data) ? data : []))
-      .catch(() => toast.error('Failed to load branches'))
-      .finally(() => setLoading(false))
+    queryClient.invalidateQueries({ queryKey: ['branches'] })
   }
-
-  useEffect(() => { load() }, [])
 
   async function handleToggleActive(branch: Branch) {
     const loadingToast = toast.loading(

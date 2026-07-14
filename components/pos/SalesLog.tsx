@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { RefreshCw, Receipt, User, ChevronDown } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
@@ -39,6 +39,9 @@ interface Props {
 function todayDate() {
   return new Date().toISOString().split('T')[0]
 }
+
+const SALE_TYPES = ['Cash Sale', 'Credit Sale', 'Partial Payment']
+const CASH_IN_TYPES = ['Cash Sale', 'Partial Payment', 'Due Collection']
 
 const TYPE_BN: Record<string, string> = {
   'Cash Sale': 'নগদ বিক্রি',
@@ -79,19 +82,17 @@ export default function SalesLog({ branchId, role }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  const SALE_TYPES = ['Cash Sale', 'Credit Sale', 'Partial Payment']
-  const CASH_IN_TYPES = ['Cash Sale', 'Partial Payment', 'Due Collection']
-  const saleCount = transactions.filter((t) => SALE_TYPES.includes(t.transactionType)).length
-  const cashTotal = transactions
-    .filter((t) => CASH_IN_TYPES.includes(t.transactionType))
-    .reduce((s, t) => s + t.financials.cashPaid, 0)
-  const khataTotal = transactions.reduce((s, t) => s + t.financials.amountAddedToKhata, 0)
-  const total = transactions
-    .filter((t) => SALE_TYPES.includes(t.transactionType))
-    .reduce((s, t) => s + t.financials.totalBill, 0)
-  const procurementTotal = transactions
-    .filter((t) => t.transactionType === 'Procurement')
-    .reduce((s, t) => s + t.financials.cashPaid, 0)
+  const { saleCount, cashTotal, khataTotal, total, procurementTotal } = useMemo(() => {
+    let saleCount = 0, cashTotal = 0, khataTotal = 0, total = 0, procurementTotal = 0
+    for (const t of transactions) {
+      const isSale = SALE_TYPES.includes(t.transactionType)
+      if (isSale) { saleCount++; total += t.financials.totalBill }
+      if (CASH_IN_TYPES.includes(t.transactionType)) cashTotal += t.financials.cashPaid
+      if (t.transactionType === 'Procurement') procurementTotal += t.financials.cashPaid
+      khataTotal += t.financials.amountAddedToKhata
+    }
+    return { saleCount, cashTotal, khataTotal, total, procurementTotal }
+  }, [transactions])
 
   const isToday = date === todayDate()
 

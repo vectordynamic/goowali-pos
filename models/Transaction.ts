@@ -89,7 +89,6 @@ const TransactionSchema = new Schema<TransactionDocument>(
 
 TransactionSchema.index({ branchId: 1, createdAt: -1 })
 TransactionSchema.index({ customerId: 1, createdAt: -1 })
-TransactionSchema.index({ 'items.isCustomOverride': 1 })
 
 const Transaction =
   mongoose.models.Transaction ||

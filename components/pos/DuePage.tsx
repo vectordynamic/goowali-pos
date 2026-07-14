@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { Wallet, RefreshCw, Search, Phone } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
+import { useBranches } from '@/lib/queries/useBranches'
 
 interface Customer {
   _id: string
@@ -31,35 +32,51 @@ interface Props {
 type DueTab = 'Retail' | 'Paikari'
 
 export default function DuePage({ role, assignedBranches, forceBranchId, lightMode }: Props) {
+  // Shared cache — was previously re-fetched on every debounced search/tab change since it
+  // lived inside the same load() call; branches don't depend on either.
+  const { data: branchesData } = useBranches(role !== 'MANAGER')
+  const branches: Branch[] = branchesData ?? []
+
   const [activeTab, setActiveTab] = useState<DueTab>('Retail')
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [branches, setBranches] = useState<Branch[]>([])
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [branchFilter, setBranchFilter] = useState(forceBranchId ?? '')
   const [loading, setLoading] = useState(true)
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Debounce the search box — avoid firing a request on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   const load = useCallback(async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     const params = new URLSearchParams({ due: '1', type: activeTab })
-    if (search) params.set('search', search)
+    if (debouncedSearch) params.set('search', debouncedSearch)
     if (branchFilter) params.set('branchId', branchFilter)
 
-    const [custRes, branchRes] = await Promise.all([
-      fetch(`/api/customers?${params}`),
-      role !== 'MANAGER' ? fetch('/api/branches') : Promise.resolve(null)
-    ])
-
-    const custData = await custRes.json()
-    setCustomers(Array.isArray(custData) ? custData : [])
-
-    if (branchRes) {
-      const branchData = await branchRes.json()
-      setBranches(Array.isArray(branchData) ? branchData : [])
+    try {
+      const custRes = await fetch(`/api/customers?${params}`, { signal: controller.signal })
+      const custData = await custRes.json()
+      setCustomers(Array.isArray(custData) ? custData : [])
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
+      toast.error('Failed to load due list')
+    } finally {
+      if (abortRef.current === controller) setLoading(false)
     }
-    setLoading(false)
-  }, [activeTab, search, branchFilter, role])
+  }, [activeTab, debouncedSearch, branchFilter, role])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    return () => abortRef.current?.abort()
+  }, [load])
 
   const branchName = (id?: string) =>
     branches.find((b) => b._id === id)?.name ?? id?.slice(-6) ?? '—'

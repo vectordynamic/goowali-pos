@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Plus, Minus, Trash2, Search, X, CheckCircle2, Lock, Play, Calendar } from 'lucide-react'
 import { formatCurrency, today } from '@/lib/utils'
+import { useProducts } from '@/lib/queries/useProducts'
+import { useDailyClosing } from '@/lib/queries/useDailyClosing'
 
 interface BranchDetail {
   branchId: string
@@ -70,10 +73,11 @@ interface Props {
 }
 
 export default function POSTerminal({ branchId }: Props) {
-  const [products, setProducts] = useState<Product[]>([])
+  const queryClient = useQueryClient()
+  const todayDate = today()
+
   const [cart, setCart] = useState<CartItem[]>([])
   const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
 
   // Customer
   const [customerPhone, setCustomerPhone] = useState('')
@@ -92,22 +96,19 @@ export default function POSTerminal({ branchId }: Props) {
   const [cashPaid, setCashPaid] = useState(0)
   const [submitting, setSubmitting] = useState(false)
 
-  // ── Day status gate ──
+  // ── Day status gate — shared cache with ZReport (same branch+date) ──
   type DayStatus = 'pending' | 'open' | 'locked' | null
-  const [dayStatus, setDayStatus] = useState<DayStatus>(null)
-  const [openingCash, setOpeningCash] = useState(0)
   const [startingDay, setStartingDay] = useState(false)
 
-  useEffect(() => {
-    fetch(`/api/daily-closing?branchId=${branchId}&date=${today()}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const s = (data.status ?? 'Pending').toLowerCase() as DayStatus
-        setDayStatus(s)
-        setOpeningCash(data.openingCash ?? data.mathematicalSystemTotals?.openingCash ?? 0)
-      })
-      .catch(() => setDayStatus('pending'))
-  }, [branchId])
+  const closingKey = ['daily-closing', branchId, todayDate]
+  const { data: closingData, isLoading: closingLoading, isError: closingErrored } = useDailyClosing(branchId, todayDate)
+
+  const dayStatus: DayStatus = closingLoading
+    ? null
+    : closingErrored
+    ? 'pending'
+    : ((closingData?.status ?? 'Pending').toLowerCase() as DayStatus)
+  const openingCash = closingData?.openingCash ?? closingData?.mathematicalSystemTotals?.openingCash ?? 0
 
   async function handleStartDay() {
     setStartingDay(true)
@@ -115,16 +116,16 @@ export default function POSTerminal({ branchId }: Props) {
       const res = await fetch('/api/daily-closing', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branchId, date: today(), action: 'startDay' }),
+        body: JSON.stringify({ branchId, date: todayDate, action: 'startDay' }),
       })
       if (res.ok) {
-        setDayStatus('open')
+        await queryClient.invalidateQueries({ queryKey: closingKey })
         toast.success('দিন শুরু হয়েছে! বিক্রি শুরু করুন ✓')
       } else {
         const err = await res.json()
-        // If already started by another session, refresh status
+        // If already started by another session, refresh status from the server
         if (res.status === 409) {
-          setDayStatus((err.status ?? 'open').toLowerCase())
+          await queryClient.invalidateQueries({ queryKey: closingKey })
         } else {
           toast.error(err.error ?? 'দিন শুরু করা যায়নি')
         }
@@ -136,15 +137,9 @@ export default function POSTerminal({ branchId }: Props) {
 
   const phoneRef = useRef<HTMLInputElement>(null)
 
-  const loadProducts = useCallback(() => {
-    fetch(`/api/products?branchId=${branchId}`)
-      .then((r) => r.json())
-      .then(setProducts)
-      .catch(() => toast.error('পণ্য লোড হয়নি'))
-      .finally(() => setLoading(false))
-  }, [branchId])
-
-  useEffect(() => { loadProducts() }, [loadProducts])
+  // ── Product catalog — shared cache with ZReport, StockManager, DailyOrders ──
+  const { data: productsData, isLoading: loading, refetch: refetchProducts } = useProducts(branchId)
+  const products: Product[] = productsData ?? []
 
   // Debounced phone search
   useEffect(() => {
@@ -161,10 +156,12 @@ export default function POSTerminal({ branchId }: Props) {
     return () => clearTimeout(t)
   }, [customerPhone, selectedCustomer, branchId])
 
-  const filtered = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.category?.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return products.filter((p) =>
+      p.name.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
+    )
+  }, [products, search])
 
   function addToCart(product: Product, variant: Variant) {
     let stockAvailable = 0
@@ -257,7 +254,7 @@ export default function POSTerminal({ branchId }: Props) {
     setTimeout(() => phoneRef.current?.focus(), 50)
   }
 
-  const cartSubtotal = cart.reduce((s, i) => s + i.mrpPrice * i.quantity, 0)
+  const cartSubtotal = useMemo(() => cart.reduce((s, i) => s + i.mrpPrice * i.quantity, 0), [cart])
   const cartTotal = Math.max(0, cartSubtotal - discount)
   const change = mode === 'Cash Sale' ? cashPaid - cartTotal : 0
 
@@ -357,7 +354,10 @@ export default function POSTerminal({ branchId }: Props) {
     setCustomerName('')
     setCustomerType('Retail')
     toast.success('বিক্রি সম্পন্ন হয়েছে ✓')
-    loadProducts()
+    refetchProducts()
+    // Ensure BranchReport/ZReport never show stale drawer-cash totals right after a sale —
+    // cheap enough to invalidate unconditionally rather than risk a stale cache window here.
+    queryClient.invalidateQueries({ queryKey: closingKey })
   }
 
   // ── Day status overlays ────────────────────────────────────────────────────

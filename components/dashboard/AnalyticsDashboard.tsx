@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend
@@ -92,7 +92,7 @@ function getPresetRange(preset: Preset): { from: string; to: string } {
   return { from: '', to: '' }
 }
 
-function StatCard({
+const StatCard = memo(function StatCard({
   label, value, sub, icon: Icon, color, bg
 }: {
   label: string; value: string; sub?: string
@@ -108,7 +108,7 @@ function StatCard({
       {sub && <p className="text-xs text-slate-600 mt-0.5">{sub}</p>}
     </div>
   )
-}
+})
 
 export default function AnalyticsDashboard({ role }: Props) {
   const [data, setData] = useState<Analytics | null>(null)

@@ -46,82 +46,7 @@ export async function GET(req: NextRequest) {
   if (from) matchStage.date = { $gte: from }
   if (to) matchStage.date = { ...(matchStage.date as object ?? {}), $lte: to }
 
-  // ── Fast aggregate from pre-computed DailySummary ──
-  const [summary] = await DailySummary.aggregate([
-    { $match: matchStage },
-    {
-      $group: {
-        _id: null,
-        salesRevenue: { $sum: '$salesRevenue' },
-        cogs: { $sum: '$cogs' },
-        grossProfit: { $sum: '$grossProfit' },
-        procurementCost: { $sum: '$procurementCost' },
-        expenses: { $sum: '$expenses' },
-        netProfit: { $sum: '$netProfit' },
-        cashIn: { $sum: '$cashIn' },
-        cashOut: { $sum: '$cashOut' },
-        khataAdded: { $sum: '$khataAdded' },
-        khataCollected: { $sum: '$khataCollected' },
-        salesCount: { $sum: '$salesCount' },
-        procurementCount: { $sum: '$procurementCount' },
-        txCount: { $sum: '$txCount' },
-        liquidSold: { $sum: '$liquidSold' },
-        weightSold: { $sum: '$weightSold' },
-        liquidProcured: { $sum: '$liquidProcured' },
-        weightProcured: { $sum: '$weightProcured' },
-      }
-    }
-  ])
-
-  // ── Daily trend from DailySummary ──
-  const trend = await DailySummary.aggregate([
-    { $match: matchStage },
-    {
-      $project: {
-        date: 1,
-        salesRevenue: 1,
-        cogs: 1,
-        grossProfit: 1,
-        netProfit: 1,
-        expenses: 1,
-        procurementCost: 1,
-        cashIn: 1,
-      }
-    },
-    { $sort: { date: 1 } },
-    { $limit: 30 }
-  ])
-
-  // ── Per-branch breakdown ──
-  const byBranchRaw = await DailySummary.aggregate([
-    { $match: matchStage },
-    {
-      $group: {
-        _id: '$branchId',
-        salesRevenue: { $sum: '$salesRevenue' },
-        grossProfit: { $sum: '$grossProfit' },
-        netProfit: { $sum: '$netProfit' },
-        procurementCost: { $sum: '$procurementCost' },
-        txCount: { $sum: '$txCount' },
-      }
-    }
-  ])
-
-  const branchIds = byBranchRaw.map((b) => b._id)
-  const branches = await Branch.find({ _id: { $in: branchIds } }).select('name').lean() as any[]
-  const branchMap = Object.fromEntries(branches.map((b: any) => [b._id.toString(), b.name]))
-
-  const byBranch = byBranchRaw.map((b) => ({
-    branchId: b._id.toString(),
-    branchName: branchMap[b._id.toString()] ?? 'Unknown',
-    salesRevenue: b.salesRevenue,
-    grossProfit: b.grossProfit,
-    netProfit: b.netProfit,
-    procurementCost: b.procurementCost,
-    txCount: b.txCount,
-  }))
-
-  // ── Product-wise breakdown — from transactions directly (acceptable for admin) ──
+  // ── Product-wise breakdown match stage (independent of matchStage above) ──
   const txMatchStage: Record<string, unknown> = {
     branchId: { $in: allowedBranches },
     transactionType: { $in: ['Cash Sale', 'Credit Sale', 'Partial Payment'] },
@@ -135,68 +60,149 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const byProduct = await Transaction.aggregate([
-    { $match: txMatchStage },
-    { $unwind: '$items' },
-    {
-      $group: {
-        _id: { productId: '$items.productId', variantId: '$items.variantId' },
-        qtySold: { $sum: '$items.quantity' },
-        revenue: { $sum: { $multiply: ['$items.quantity', '$items.rateApplied'] } },
-        grossProfit: { $sum: '$financials.netProfitAmount' },
-        txCount: { $sum: 1 },
-      }
-    },
-    {
-      $lookup: {
-        from: 'products',
-        localField: '_id.productId',
-        foreignField: '_id',
-        as: 'product'
-      }
-    },
-    { $unwind: '$product' },
-    {
-      $project: {
-        productId: '$_id.productId',
-        variantId: '$_id.variantId',
-        productName: '$product.name',
-        sizeLabel: {
-          $let: {
-            vars: {
-              v: {
-                $first: {
-                  $filter: {
-                    input: '$product.variants',
-                    as: 'v',
-                    cond: { $eq: ['$$v.variantId', '$_id.variantId'] }
-                  }
-                }
-              }
-            },
-            in: '$$v.sizeLabel'
-          }
-        },
-        unitType: '$product.unitType',
-        qtySold: 1, revenue: 1, grossProfit: 1, txCount: 1,
-      }
-    },
-    { $sort: { revenue: -1 } },
-  ])
-
-  // ── Outstanding khata ──
   const khataFilter = allowedBranches.length > 0
     ? { registeredBranch: { $in: allowedBranches } }
     : {}
-  const [khataTotal] = await Customer.aggregate([
-    { $match: khataFilter },
-    { $group: { _id: null, totalDue: { $sum: '$khata.currentDue' } } }
+
+  // None of the 6 reads below depend on each other's results — run them concurrently
+  // instead of one after another (previously ~7 sequential round trips for this endpoint).
+  const [summaryResult, trend, byBranchRaw, byProduct, khataResult, visibleBranchesRaw] = await Promise.all([
+    // ── Fast aggregate from pre-computed DailySummary ──
+    DailySummary.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: null,
+          salesRevenue: { $sum: '$salesRevenue' },
+          cogs: { $sum: '$cogs' },
+          grossProfit: { $sum: '$grossProfit' },
+          procurementCost: { $sum: '$procurementCost' },
+          expenses: { $sum: '$expenses' },
+          netProfit: { $sum: '$netProfit' },
+          cashIn: { $sum: '$cashIn' },
+          cashOut: { $sum: '$cashOut' },
+          khataAdded: { $sum: '$khataAdded' },
+          khataCollected: { $sum: '$khataCollected' },
+          salesCount: { $sum: '$salesCount' },
+          procurementCount: { $sum: '$procurementCount' },
+          txCount: { $sum: '$txCount' },
+          liquidSold: { $sum: '$liquidSold' },
+          weightSold: { $sum: '$weightSold' },
+          liquidProcured: { $sum: '$liquidProcured' },
+          weightProcured: { $sum: '$weightProcured' },
+        }
+      }
+    ]),
+    // ── Daily trend from DailySummary ──
+    DailySummary.aggregate([
+      { $match: matchStage },
+      {
+        $project: {
+          date: 1,
+          salesRevenue: 1,
+          cogs: 1,
+          grossProfit: 1,
+          netProfit: 1,
+          expenses: 1,
+          procurementCost: 1,
+          cashIn: 1,
+        }
+      },
+      { $sort: { date: 1 } },
+      { $limit: 30 }
+    ]),
+    // ── Per-branch breakdown ──
+    DailySummary.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: '$branchId',
+          salesRevenue: { $sum: '$salesRevenue' },
+          grossProfit: { $sum: '$grossProfit' },
+          netProfit: { $sum: '$netProfit' },
+          procurementCost: { $sum: '$procurementCost' },
+          txCount: { $sum: '$txCount' },
+        }
+      }
+    ]),
+    // ── Product-wise breakdown — from transactions directly (acceptable for admin) ──
+    Transaction.aggregate([
+      { $match: txMatchStage },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: { productId: '$items.productId', variantId: '$items.variantId' },
+          qtySold: { $sum: '$items.quantity' },
+          revenue: { $sum: { $multiply: ['$items.quantity', '$items.rateApplied'] } },
+          grossProfit: { $sum: '$financials.netProfitAmount' },
+          txCount: { $sum: 1 },
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id.productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      { $unwind: '$product' },
+      {
+        $project: {
+          productId: '$_id.productId',
+          variantId: '$_id.variantId',
+          productName: '$product.name',
+          sizeLabel: {
+            $let: {
+              vars: {
+                v: {
+                  $first: {
+                    $filter: {
+                      input: '$product.variants',
+                      as: 'v',
+                      cond: { $eq: ['$$v.variantId', '$_id.variantId'] }
+                    }
+                  }
+                }
+              },
+              in: '$$v.sizeLabel'
+            }
+          },
+          unitType: '$product.unitType',
+          qtySold: 1, revenue: 1, grossProfit: 1, txCount: 1,
+        }
+      },
+      { $sort: { revenue: -1 } },
+    ]),
+    // ── Outstanding khata ──
+    Customer.aggregate([
+      { $match: khataFilter },
+      { $group: { _id: null, totalDue: { $sum: '$khata.currentDue' } } }
+    ]),
+    // ── Visible branches for dropdown ──
+    Branch.find(
+      role === 'SUPER_ADMIN' ? {} : { _id: { $in: assignedBranches } }
+    ).select('_id name').lean(),
   ])
 
-  // ── Visible branches for dropdown ──
-  const visibleBranches = await Branch.find(
-    role === 'SUPER_ADMIN' ? {} : { _id: { $in: assignedBranches } }
-  ).select('_id name').lean() as any[]
+  const summary = summaryResult[0]
+  const khataTotal = khataResult[0]
+  const visibleBranches = visibleBranchesRaw as any[]
+
+  // Branch-name lookup genuinely depends on byBranchRaw's result — must run after.
+  const branchIds = byBranchRaw.map((b) => b._id)
+  const branches = await Branch.find({ _id: { $in: branchIds } }).select('name').lean() as any[]
+  const branchMap = Object.fromEntries(branches.map((b: any) => [b._id.toString(), b.name]))
+
+  const byBranch = byBranchRaw.map((b) => ({
+    branchId: b._id.toString(),
+    branchName: branchMap[b._id.toString()] ?? 'Unknown',
+    salesRevenue: b.salesRevenue,
+    grossProfit: b.grossProfit,
+    netProfit: b.netProfit,
+    procurementCost: b.procurementCost,
+    txCount: b.txCount,
+  }))
 
   const emptySummary = {
     salesRevenue: 0, cogs: 0, grossProfit: 0,

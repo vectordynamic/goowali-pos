@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import toast from 'react-hot-toast'
 import {
   TrendingDown, TrendingUp, Package,
@@ -91,7 +91,7 @@ interface Props {
   defaultBranchId?: string
 }
 
-function StatCard({ label, value, sub, color = 'gray' }: {
+const StatCard = memo(function StatCard({ label, value, sub, color = 'gray' }: {
   label: string; value: string; sub?: string; color?: 'green' | 'red' | 'blue' | 'amber' | 'gray'
 }) {
   const colors = {
@@ -112,7 +112,7 @@ function StatCard({ label, value, sub, color = 'gray' }: {
       {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
     </div>
   )
-}
+})
 
 export default function BranchReport({ role, branches, assignedBranches, defaultBranchId }: Props) {
   const defaultBranch = defaultBranchId ?? branches[0]?._id ?? ''

@@ -6,6 +6,31 @@ import Product from '@/models/Product'
 import { assertBranchAccess, branchDenied, stripSensitiveProductData } from '@/lib/utils'
 import { validate, ProductCreateSchema } from '@/lib/validators'
 import type { Role } from '@/types'
+import mongoose from 'mongoose'
+
+// Common projection shape: keep every top-level product field, but let the caller supply
+// the $filter condition used to trim variants[].branchDetails / pooledStock down to only
+// the branch(es) that matter — done in the DB, not by pulling every branch's data over the
+// wire and discarding most of it in application code afterward.
+function branchScopedProjection(branchDetailsCond: unknown, pooledStockCond: unknown) {
+  return {
+    productCode: 1, name: 1, category: 1, unitType: 1, isOpenLoose: 1, isPooled: 1,
+    createdAt: 1, updatedAt: 1,
+    variants: {
+      $map: {
+        input: '$variants',
+        as: 'v',
+        in: {
+          variantId: '$$v.variantId',
+          sizeLabel: '$$v.sizeLabel',
+          portionSize: '$$v.portionSize',
+          branchDetails: { $filter: { input: '$$v.branchDetails', as: 'bd', cond: branchDetailsCond } },
+        },
+      },
+    },
+    pooledStock: { $filter: { input: '$pooledStock', as: 'ps', cond: pooledStockCond } },
+  }
+}
 
 // GET /api/products?branchId=xxx  (branch-specific, manager-safe)
 // GET /api/products?all=1          (admin global view, no stripping)
@@ -23,22 +48,17 @@ export async function GET(req: NextRequest) {
 
   // Admin global view
   if (all && role !== 'MANAGER') {
-    const products = await Product.find({}).lean()
-
-    // BRANCH_ADMIN gets all products but only their branch's stock/pricing
+    // BRANCH_ADMIN gets every product but only their own branches' stock/pricing —
+    // filtered server-side instead of fetching every branch's data and discarding most of it.
     if (role === 'BRANCH_ADMIN') {
-      const filtered = products.map((p: any) => ({
-        ...p,
-        variants: p.variants.map((v: any) => ({
-          ...v,
-          branchDetails: v.branchDetails.filter((bd: any) =>
-            assignedBranches.includes(bd.branchId.toString())
-          )
-        }))
-      }))
-      return NextResponse.json(filtered)
+      const branchOids = assignedBranches.map((b) => new mongoose.Types.ObjectId(b))
+      const products = await Product.aggregate([
+        { $project: branchScopedProjection({ $in: ['$$bd.branchId', branchOids] }, { $in: ['$$ps.branchId', branchOids] }) },
+      ])
+      return NextResponse.json(products)
     }
 
+    const products = await Product.find({}).lean()
     return NextResponse.json(products)
   }
 
@@ -48,19 +68,11 @@ export async function GET(req: NextRequest) {
 
   if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
 
-  const products = await Product.find({
-    'variants.branchDetails.branchId': branchId
-  }).lean()
-
-  const filtered = products.map((p) => ({
-    ...p,
-    variants: p.variants.map((v: any) => ({
-      ...v,
-      branchDetails: v.branchDetails.filter(
-        (bd: any) => bd.branchId.toString() === branchId
-      )
-    }))
-  }))
+  const branchOid = new mongoose.Types.ObjectId(branchId)
+  const filtered = await Product.aggregate([
+    { $match: { 'variants.branchDetails.branchId': branchOid } },
+    { $project: branchScopedProjection({ $eq: ['$$bd.branchId', branchOid] }, { $eq: ['$$ps.branchId', branchOid] }) },
+  ])
 
   // In stock management context, manager needs to see buying price to update it
   const sanitized = stockContext ? filtered : stripSensitiveProductData(filtered, role)

@@ -2,6 +2,19 @@
 
 A full-stack POS (Point of Sale) and admin management system for multi-branch retail businesses. Built for dairy/milk product shops but generalizable. Manages sales, stock, customers (retail + wholesale), daily cash closings, and analytics across multiple branches.
 
+This file covers quick start, tech stack, and a high-level tour. For the detailed reference layer
+(kept in sync with source, not summarized), see:
+
+- **[API_README.md](./API_README.md)** — full backend contract: every model, every endpoint,
+  every business formula, RBAC matrix, error conventions.
+- **[FRONTEND_README.md](./FRONTEND_README.md)** — full frontend structure: routing, component
+  inventory, state management approach, theming conventions.
+- **[PERFORMANCE_ANALYSIS.md](./PERFORMANCE_ANALYSIS.md)** — root-cause analysis of current
+  performance issues (N+1 queries, no client-side cache, render/bundle findings) with a
+  prioritized fix plan.
+- **[GAP_ANALYSIS.md](./GAP_ANALYSIS.md)** — dead code, missing tests, duplicated logic,
+  production-readiness gaps.
+
 ---
 
 ## Table of Contents

@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ClipboardList, RefreshCw, Minus, Plus } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { useProducts } from '@/lib/queries/useProducts'
 
 type PaymentType = 'cash' | 'partial' | 'credit'
 
@@ -60,30 +62,39 @@ interface Props {
 }
 
 export default function DailyOrders({ branchId, date, onTaken }: Props) {
-  const [logs, setLogs] = useState<OrderLog[]>([])
-  const [products, setProducts] = useState<ProductLite[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const ordersKey = ['daily-orders', branchId, date]
+
   const [acting, setActing] = useState<Record<string, boolean>>({})
   // For partial only: track the cash amount being entered
   const [partialInput, setPartialInput] = useState<Record<string, string>>({})
   // Today's quantity can differ from the configured daily default — keyed `${customerId}:${idx}`
   const [qtyOverride, setQtyOverride] = useState<Record<string, number>>({})
 
-  const load = useCallback(() => {
-    setLoading(true)
-    Promise.all([
-      fetch(`/api/daily-orders?branchId=${branchId}&date=${date}`).then((r) => r.json()),
-      fetch(`/api/products?branchId=${branchId}`).then((r) => r.json())
-    ])
-      .then(([orderLogs, prods]) => {
-        setLogs(Array.isArray(orderLogs) ? orderLogs : [])
-        setProducts(Array.isArray(prods) ? prods : [])
-      })
-      .catch(() => toast.error('নিয়মিত অর্ডার লোড হয়নি'))
-      .finally(() => setLoading(false))
-  }, [branchId, date])
+  const { data: logsData, isLoading: logsLoading, isError: logsErrored } = useQuery({
+    queryKey: ordersKey,
+    queryFn: async () => {
+      const res = await fetch(`/api/daily-orders?branchId=${branchId}&date=${date}`)
+      if (!res.ok) throw new Error('নিয়মিত অর্ডার লোড হয়নি')
+      return res.json()
+    },
+    enabled: !!branchId && !!date,
+  })
+  const logs: OrderLog[] = logsData ?? []
 
-  useEffect(() => { load() }, [load])
+  // Shared cache with POSTerminal/ZReport/StockManager — see lib/queries/useProducts.
+  const { data: productsData, isLoading: productsLoading } = useProducts(branchId)
+  const products: ProductLite[] = productsData ?? []
+
+  const loading = logsLoading || productsLoading
+
+  useEffect(() => {
+    if (logsErrored) toast.error('নিয়মিত অর্ডার লোড হয়নি')
+  }, [logsErrored])
+
+  function load() {
+    queryClient.invalidateQueries({ queryKey: ordersKey })
+  }
 
   function productName(productId: string) {
     return products.find((p) => p._id === productId)?.name ?? 'পণ্য'
@@ -120,6 +131,11 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
       const label = paymentType === 'cash' ? 'নগদ' : paymentType === 'partial' ? 'আংশিক' : 'বাকি'
       toast.success(`দেওয়া হয়েছে — ${label}`)
       setPartialInput((p) => { const n = { ...p }; delete n[customerId]; return n })
+      // A dispatch deducted stock and created a transaction — refresh the shared product
+      // catalog and today's daily-closing totals so POSTerminal/ZReport/StockManager don't
+      // show stale numbers, in addition to SalesLog's own transactions list via onTaken.
+      queryClient.invalidateQueries({ queryKey: ['products', branchId, null] })
+      queryClient.invalidateQueries({ queryKey: ['daily-closing', branchId, date] })
       onTaken?.()
     }
 

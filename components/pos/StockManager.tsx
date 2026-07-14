@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Package, ChevronDown, ChevronUp, Check } from 'lucide-react'
+import { useProducts } from '@/lib/queries/useProducts'
 
 interface BranchDetail {
   branchId: string
@@ -46,23 +48,96 @@ interface OwnerOption {
   name: string
 }
 
+// ── Store / owner pay-source picker — shared by pool and normal rows ──────────
+// Hoisted to module scope (not nested inside StockManager) so it keeps a stable
+// component identity across renders instead of remounting on every keystroke.
+function PaySourcePicker({
+  rowKeyValue,
+  buyingPrice,
+  row,
+  owners,
+  setRow,
+}: {
+  rowKeyValue: string
+  buyingPrice: number
+  row: RowState
+  owners: OwnerOption[]
+  setRow: (key: string, patch: Partial<RowState>, bpHint?: number) => void
+}) {
+  const total = row.quantity && row.buyingPrice ? Number(row.quantity) * Number(row.buyingPrice) : 0
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setRow(rowKeyValue, { paidBy: 'store' }, buyingPrice)}
+          className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-colors ${
+            row.paidBy === 'store' ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-gray-300 text-gray-600'
+          }`}
+        >
+          দোকানের টাকায়
+        </button>
+        <button
+          type="button"
+          onClick={() => setRow(rowKeyValue, {
+            paidBy: 'owner',
+            ownerId: owners.length === 1 ? owners[0]._id : row.ownerId,
+          }, buyingPrice)}
+          className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-colors ${
+            row.paidBy === 'owner' ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-300 text-gray-600'
+          }`}
+        >
+          মালিকের টাকায়
+        </button>
+      </div>
+
+      {row.paidBy === 'owner' && (
+        owners.length === 0 ? (
+          <p className="text-xs text-red-500 font-bold">কোনো মালিক পাওয়া যায়নি</p>
+        ) : owners.length === 1 ? (
+          <p className="text-sm font-bold text-purple-700">মালিক: {owners[0].name}</p>
+        ) : (
+          <div className="flex gap-2 flex-wrap">
+            {owners.map((o) => (
+              <button
+                key={o._id}
+                type="button"
+                onClick={() => setRow(rowKeyValue, { ownerId: o._id }, buyingPrice)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-bold border-2 transition-colors ${
+                  row.ownerId === o._id ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-300 text-gray-600'
+                }`}
+              >
+                {o.name}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
+      {total > 0 && (
+        <p className={`text-sm font-black ${row.paidBy === 'owner' ? 'text-purple-700' : 'text-green-700'}`}>
+          ৳{total.toLocaleString()}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function StockManager({ branchId }: { branchId: string }) {
-  const [products, setProducts] = useState<Product[]>([])
+  const queryClient = useQueryClient()
+  // 'stock' context always includes buyingPrice — a distinct cache entry from the plain
+  // catalog fetch shared by POSTerminal/ZReport/DailyOrders, since the response shape differs.
+  const stockProductsKey = ['products', branchId, 'stock']
+  const { data: productsData, isLoading: loading, isError: productsErrored } = useProducts(branchId, { context: 'stock' })
+  const products: Product[] = productsData ?? []
   const [owners, setOwners] = useState<OwnerOption[]>([])
-  const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(true)
   const [rows, setRows] = useState<Record<string, RowState>>({})
 
-  const loadProducts = useCallback(() => {
-    setLoading(true)
-    fetch(`/api/products?branchId=${branchId}&context=stock`)
-      .then((r) => r.json())
-      .then((data) => setProducts(Array.isArray(data) ? data : []))
-      .catch(() => toast.error('স্টক লোড হয়নি'))
-      .finally(() => setLoading(false))
-  }, [branchId])
-
-  useEffect(() => { loadProducts() }, [loadProducts])
+  useEffect(() => {
+    if (productsErrored) toast.error('স্টক লোড হয়নি')
+  }, [productsErrored])
 
   useEffect(() => {
     fetch('/api/branch-admins')
@@ -103,69 +178,6 @@ export default function StockManager({ branchId }: { branchId: string }) {
     setRows((prev) => ({ ...prev, [key]: { ...getRow(key, bpHint), ...prev[key], ...patch } }))
   }
 
-  // ── Store / owner pay-source picker — shared by pool and normal rows ──────────
-  function PaySourcePicker({ rowKeyValue, buyingPrice }: { rowKeyValue: string; buyingPrice: number }) {
-    const row = getRow(rowKeyValue, buyingPrice)
-    const total = row.quantity && row.buyingPrice ? Number(row.quantity) * Number(row.buyingPrice) : 0
-
-    return (
-      <div className="space-y-2">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setRow(rowKeyValue, { paidBy: 'store' }, buyingPrice)}
-            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-colors ${
-              row.paidBy === 'store' ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-gray-300 text-gray-600'
-            }`}
-          >
-            দোকানের টাকায়
-          </button>
-          <button
-            type="button"
-            onClick={() => setRow(rowKeyValue, {
-              paidBy: 'owner',
-              ownerId: owners.length === 1 ? owners[0]._id : row.ownerId,
-            }, buyingPrice)}
-            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-colors ${
-              row.paidBy === 'owner' ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-300 text-gray-600'
-            }`}
-          >
-            মালিকের টাকায়
-          </button>
-        </div>
-
-        {row.paidBy === 'owner' && (
-          owners.length === 0 ? (
-            <p className="text-xs text-red-500 font-bold">কোনো মালিক পাওয়া যায়নি</p>
-          ) : owners.length === 1 ? (
-            <p className="text-sm font-bold text-purple-700">মালিক: {owners[0].name}</p>
-          ) : (
-            <div className="flex gap-2 flex-wrap">
-              {owners.map((o) => (
-                <button
-                  key={o._id}
-                  type="button"
-                  onClick={() => setRow(rowKeyValue, { ownerId: o._id }, buyingPrice)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-bold border-2 transition-colors ${
-                    row.ownerId === o._id ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-300 text-gray-600'
-                  }`}
-                >
-                  {o.name}
-                </button>
-              ))}
-            </div>
-          )
-        )}
-
-        {total > 0 && (
-          <p className={`text-sm font-black ${row.paidBy === 'owner' ? 'text-purple-700' : 'text-green-700'}`}>
-            ৳{total.toLocaleString()}
-          </p>
-        )}
-      </div>
-    )
-  }
-
   // ── Normal mode save ─────────────────────────────────────────────────────────
   async function handleSave(product: Product, variant: Variant) {
     const { stockLevel, buyingPrice: currentBuyingPrice } = getStock(product, variant.variantId)
@@ -203,8 +215,8 @@ export default function StockManager({ branchId }: { branchId: string }) {
 
     const { stockLevel: newStock, procurementId } = await res.json()
 
-    setProducts((prev) =>
-      prev.map((p) => {
+    queryClient.setQueryData(stockProductsKey, (prev: Product[] | undefined) =>
+      (prev ?? []).map((p) => {
         if (p._id !== product._id) return p
         return {
           ...p,
@@ -225,6 +237,9 @@ export default function StockManager({ branchId }: { branchId: string }) {
         }
       })
     )
+    // Stock changed — the plain (non-stock-context) catalog cache shared by
+    // POSTerminal/ZReport/DailyOrders is now stale, force it to refetch next time it's read.
+    queryClient.invalidateQueries({ queryKey: ['products', branchId, null] })
 
     toast.success(procurementId ? `স্টক আপডেট ও কেনা রেকর্ড — এখন ${newStock}` : `স্টক আপডেট — এখন ${newStock}`)
     setRows((prev) => { const next = { ...prev }; delete next[key]; return next })
@@ -266,8 +281,8 @@ export default function StockManager({ branchId }: { branchId: string }) {
 
     const { stockLevel: newPool, procurementId } = await res.json()
 
-    setProducts((prev) =>
-      prev.map((p) => {
+    queryClient.setQueryData(stockProductsKey, (prev: Product[] | undefined) =>
+      (prev ?? []).map((p) => {
         if (p._id !== product._id) return p
         const hasEntry = p.pooledStock.some((e) => e.branchId === branchId)
         return {
@@ -282,6 +297,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
         }
       })
     )
+    queryClient.invalidateQueries({ queryKey: ['products', branchId, null] })
 
     toast.success(procurementId ? `পুল স্টক আপডেট ও কেনা রেকর্ড — এখন ${newPool} ${product.unitType === 'Liquid' ? 'L' : 'kg'}` : `পুল স্টক আপডেট — এখন ${newPool} ${product.unitType === 'Liquid' ? 'L' : 'kg'}`)
     setRows((prev) => { const next = { ...prev }; delete next[key]; return next })
@@ -389,7 +405,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                   </div>
 
                   {row.quantity && (
-                    <PaySourcePicker rowKeyValue={poolKey} buyingPrice={buyingPrice} />
+                    <PaySourcePicker rowKeyValue={poolKey} buyingPrice={buyingPrice} row={row} owners={owners} setRow={setRow} />
                   )}
                 </div>
               )
@@ -471,7 +487,7 @@ export default function StockManager({ branchId }: { branchId: string }) {
                   </div>
 
                   {row.quantity && (
-                    <PaySourcePicker rowKeyValue={key} buyingPrice={buyingPrice} />
+                    <PaySourcePicker rowKeyValue={key} buyingPrice={buyingPrice} row={row} owners={owners} setRow={setRow} />
                   )}
                 </div>
               )

@@ -73,7 +73,10 @@ export async function GET(req: NextRequest) {
     ]
   }
 
-  const customers = await Customer.find(filter).sort({ name: 1 }).lean()
+  // Safety cap — this route has no pagination UI yet (see PERFORMANCE_ANALYSIS.md), so this
+  // is a ceiling against a pathological unbounded return, not a real page size. Far above any
+  // realistic current customer count; raise (and add real pagination) if that stops being true.
+  const customers = await Customer.find(filter).sort({ name: 1 }).limit(500).lean()
 
   // Strip sensitive fields for manager dispatch confirmation — name + type + qty only
   if (role === 'MANAGER' && confirm) {

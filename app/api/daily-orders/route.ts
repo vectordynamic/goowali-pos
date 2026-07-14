@@ -205,12 +205,21 @@ export async function PATCH(req: NextRequest) {
   const { default: Product } = await import('@/models/Product')
   const { default: Transaction } = await import('@/models/Transaction')
 
+  // Batch-fetch every unique product in the dispatch list in one query instead of one
+  // sequential findById per line, same as the main POS checkout route. Nothing is saved
+  // until every line has been validated, so a dispatch that fails partway through (e.g.
+  // insufficient stock on line 3) no longer leaves lines 1-2's stock partially deducted.
+  const uniqueProductIds = [...new Set(dispatchList.map((r) => r.productId.toString()))]
+  const products = await Product.find({ _id: { $in: uniqueProductIds } })
+  const productMap = new Map(products.map((p) => [p._id.toString(), p]))
+  const touchedProductIds = new Set<string>()
+
   let totalBill = 0
   let totalCOGS = 0
   const processedItems: any[] = []
 
   for (const rate of dispatchList) {
-    const product = await Product.findById(rate.productId)
+    const product = productMap.get(rate.productId.toString())
     if (!product) continue
 
     const variant = product.variants.find((v: any) => v.variantId === rate.variantId)
@@ -241,7 +250,7 @@ export async function PATCH(req: NextRequest) {
       }
 
       poolEntry.stockQty = Math.max(0, poolEntry.stockQty - totalDeduction)
-      await product.save()
+      touchedProductIds.add(product._id.toString())
 
       totalBill += rate.lockedRate * qty
       totalCOGS += (poolEntry.buyingPrice ?? 0) * totalDeduction
@@ -270,7 +279,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     branchDetail.stockLevel -= qty
-    await product.save()
+    touchedProductIds.add(product._id.toString())
     totalBill += rate.lockedRate * qty
     totalCOGS += branchDetail.buyingPrice * qty
 
@@ -286,6 +295,10 @@ export async function PATCH(req: NextRequest) {
   if (processedItems.length === 0) {
     return NextResponse.json({ error: 'No dispatchable items found for this branch' }, { status: 400 })
   }
+
+  // All lines validated — persist every touched product's stock change in parallel
+  // (previously one sequential save per line, awaited one at a time).
+  await Promise.all([...touchedProductIds].map((id) => productMap.get(id)!.save()))
 
   const netProfitAmount = totalBill - totalCOGS
   const cash = pType === 'cash' ? totalBill : pType === 'partial' ? Math.min(Number(cashPaid), totalBill) : 0

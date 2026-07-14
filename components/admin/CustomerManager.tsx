@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import {
   Plus, Pencil, X, Users, RefreshCw, Search, Phone, MapPin, Wallet
 } from 'lucide-react'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import { formatCurrency } from '@/lib/utils'
+import { useBranches } from '@/lib/queries/useBranches'
 
 interface Branch {
   _id: string
@@ -39,44 +40,58 @@ export default function CustomerManager({ role, assignedBranches, forceBranchId,
 
 // Full customer management view for SUPER_ADMIN and BRANCH_ADMIN
 function AdminCustomerView({ role, assignedBranches, forceBranchId, lightMode }: Props) {
+  // Shared cache — was previously re-fetched on every debounced search keystroke and every
+  // tab-filter change since it lived inside the same loadCustomers() call; branches don't
+  // depend on either, so pulling it out here is a real fix, not just a dedup with other pages.
+  const { data: branchesData } = useBranches(role !== 'MANAGER')
+  const branches: Branch[] = branchesData ?? []
+
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabOption>('All')
   const [modal, setModal] = useState<null | 'create' | Customer>(null)
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const branchScope = forceBranchId ?? ''
   const typeFilter = activeTab === 'All' ? '' : activeTab
   // Manager sees flat list of their own customers — no type tabs needed
   const tabs: TabOption[] = role === 'MANAGER' ? [] : ['All', 'Retail', 'Paikari']
 
+  // Debounce the search box — avoid firing a request on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
   const loadCustomers = useCallback(async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     const params = new URLSearchParams()
-    if (search) params.set('search', search)
+    if (debouncedSearch) params.set('search', debouncedSearch)
     if (typeFilter && role !== 'MANAGER') params.set('type', typeFilter)
     if (branchScope) params.set('branchId', branchScope)
 
-    const [custRes, branchRes] = await Promise.all([
-      fetch(`/api/customers?${params}`),
-      role !== 'MANAGER' ? fetch('/api/branches') : Promise.resolve(null)
-    ])
-
-    const custData = await custRes.json()
-    setCustomers(Array.isArray(custData) ? custData : [])
-
-    if (branchRes) {
-      const branchData = await branchRes.json()
-      setBranches(Array.isArray(branchData) ? branchData : [])
+    try {
+      const custRes = await fetch(`/api/customers?${params}`, { signal: controller.signal })
+      const custData = await custRes.json()
+      setCustomers(Array.isArray(custData) ? custData : [])
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
+      toast.error('Failed to load customers')
+    } finally {
+      if (abortRef.current === controller) setLoading(false)
     }
-
-    setLoading(false)
-  }, [search, typeFilter, branchScope, role])
+  }, [debouncedSearch, typeFilter, branchScope, role])
 
   useEffect(() => {
     loadCustomers()
+    return () => abortRef.current?.abort()
   }, [loadCustomers])
 
   const branchName = (id?: string) =>

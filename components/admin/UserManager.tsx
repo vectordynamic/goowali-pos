@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, X, RefreshCw, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { Role } from '@/types'
+import { useBranches } from '@/lib/queries/useBranches'
 
 interface Branch {
   _id: string
@@ -33,22 +34,20 @@ const ROLE_COLORS: Record<Role, string> = {
 }
 
 export default function UserManager({ role: actorRole, assignedBranches: actorBranches }: Props) {
+  // Shared cache — see BranchManager.tsx (write-side), ProductManager.tsx, etc.
+  const { data: branchesData } = useBranches()
+  const branches: Branch[] = branchesData ?? []
+
   const [users, setUsers] = useState<User[]>([])
-  const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<null | 'create' | User>(null)
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
 
   function load() {
     setLoading(true)
-    Promise.all([
-      fetch('/api/users').then((r) => r.json()),
-      fetch('/api/branches').then((r) => r.json())
-    ])
-      .then(([u, b]) => {
-        setUsers(Array.isArray(u) ? u : [])
-        setBranches(Array.isArray(b) ? b : [])
-      })
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((u) => setUsers(Array.isArray(u) ? u : []))
       .catch(() => toast.error('Failed to load users'))
       .finally(() => setLoading(false))
   }

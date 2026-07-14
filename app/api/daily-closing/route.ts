@@ -97,12 +97,14 @@ export async function GET(req: NextRequest) {
 
   await dbConnect()
 
-  const yesterday = await DailyClosing.findOne({ branchId, date: prevDate(date) })
+  // Today's own doc doesn't depend on yesterday's — fetch both in parallel instead of serially.
+  const [yesterday, closing] = await Promise.all([
+    DailyClosing.findOne({ branchId, date: prevDate(date) }),
+    DailyClosing.findOne({ branchId, date }),
+  ])
   const lateWithdrawn = await lateWithdrawalsSince(branchId, yesterday?.dayLockedAt, date)
   const openingCash = (yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0) - lateWithdrawn
   const yesterdayPreOrders = yesterday?.tomorrowPreOrders ?? []
-
-  let closing = await DailyClosing.findOne({ branchId, date })
 
   // ── Day not started yet: return a virtual Pending response (no DB write) ──
   if (!closing) {
@@ -243,6 +245,22 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // Bulk variant: save every stock-gap reason in one write instead of one PATCH per row.
+  // Body: { action: 'stockReasons', reasons: [{productId, variantId, reason}] }
+  if (action === 'stockReasons') {
+    const reasons = Array.isArray(body.reasons)
+      ? body.reasons
+          .filter((r: any) => r?.productId && r?.variantId && typeof r.reason === 'string' && r.reason.trim())
+          .map((r: any) => ({ productId: r.productId, variantId: r.variantId, reason: r.reason.trim() }))
+      : []
+    const closing = await DailyClosing.findOneAndUpdate(
+      { branchId, date: targetDate },
+      { $set: { stockCheckReasons: reasons } },
+      { new: true, upsert: true }
+    )
+    return NextResponse.json(closing)
+  }
+
   // Legacy: opening cash (kept for backward compat with any admin-facing callers)
   if (body.openingCash !== undefined) {
     const openingCash = Number(body.openingCash)
@@ -279,13 +297,16 @@ export async function POST(req: NextRequest) {
   // Carry the real opening cash into the final snapshot — previously this always computed
   // with openingCash=0 here, silently discarding the value set at "Start Day" and making the
   // locked cashShortage wrong for every closed day.
-  const yesterday = await DailyClosing.findOne({ branchId, date: prevDate(targetDate) })
+  // Today's own doc doesn't depend on yesterday's — fetch both in parallel instead of serially.
+  const [yesterday, existingClosing] = await Promise.all([
+    DailyClosing.findOne({ branchId, date: prevDate(targetDate) }),
+    DailyClosing.findOne({ branchId, date: targetDate }),
+  ])
   const lateWithdrawn = await lateWithdrawalsSince(branchId, yesterday?.dayLockedAt, targetDate)
   const openingCash = (yesterday?.nightCashCounted ?? yesterday?.mathematicalSystemTotals?.openingCash ?? 0) - lateWithdrawn
 
   const systemTotals = await computeSystemTotals(branchId, targetDate, openingCash)
-  let closing = await DailyClosing.findOne({ branchId, date: targetDate })
-  if (!closing) closing = new DailyClosing({ branchId, date: targetDate })
+  const closing = existingClosing ?? new DailyClosing({ branchId, date: targetDate })
 
   if (closing.status === 'Locked') {
     return NextResponse.json({ error: 'Day already locked' }, { status: 409 })

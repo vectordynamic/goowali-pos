@@ -1,10 +1,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import dynamic from 'next/dynamic'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, X, Package, ChevronDown, ChevronRight, Trash2, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Package, ChevronDown, ChevronRight, Trash2, RefreshCw } from 'lucide-react'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { Role } from '@/types'
+import { useBranches } from '@/lib/queries/useBranches'
+import { useAllProducts } from '@/lib/queries/useProducts'
+
+// Code-split: these 4 modals are only ever needed after a user clicks an action button
+// (add product, add variant, set stock, set pool stock) — no reason to ship their code in
+// the initial /products bundle. `ssr: false` since they're pure client-interaction modals.
+const ProductModal = dynamic(() => import('./product-modals/ProductModal'), { ssr: false })
+const VariantModal = dynamic(() => import('./product-modals/VariantModal'), { ssr: false })
+const BranchStockModal = dynamic(() => import('./product-modals/BranchStockModal'), { ssr: false })
+const PooledStockModal = dynamic(() => import('./product-modals/PooledStockModal'), { ssr: false })
 
 interface BranchDetail {
   branchId: string
@@ -49,9 +61,16 @@ interface Props {
 }
 
 export default function ProductManager({ role, assignedBranches }: Props) {
-  const [products, setProducts] = useState<Product[]>([])
-  const [branches, setBranches] = useState<Branch[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  // Shared cache — BranchManager (the write-side) invalidates ['branches'] on create/edit/
+  // deactivate, so this list stays fresh without ProductManager needing its own fetch.
+  const { data: branchesData } = useBranches()
+  const branches: Branch[] = branchesData ?? []
+
+  // Shared with RegularOrderManager, which fetches this exact same `?all=1` endpoint.
+  const { data: productsData, isLoading: loading, isError: productsErrored } = useAllProducts()
+  const products: Product[] = productsData ?? []
+
   const [expanded, setExpanded] = useState<string | null>(null)
   const [modal, setModal] = useState<null | 'create' | Product>(null)
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
@@ -63,21 +82,15 @@ export default function ProductManager({ role, assignedBranches }: Props) {
   const [variantModal, setVariantModal] = useState<{ productId: string; isPooled: boolean } | null>(null)
   const [pooledStockModal, setPooledStockModal] = useState<string | null>(null)
 
-  function load() {
-    setLoading(true)
-    Promise.all([
-      fetch('/api/products?all=1').then((r) => r.json()),
-      fetch('/api/branches').then((r) => r.json())
-    ])
-      .then(([p, b]) => {
-        setProducts(Array.isArray(p) ? p : [])
-        setBranches(Array.isArray(b) ? b : [])
-      })
-      .catch(() => toast.error('Failed to load products'))
-      .finally(() => setLoading(false))
-  }
+  useEffect(() => {
+    if (productsErrored) toast.error('Failed to load products')
+  }, [productsErrored])
 
-  useEffect(() => { load() }, [])
+  // Only the product catalog needs reloading after a save here — branches never change as a
+  // side effect of anything on this page, so it no longer gets bundled into every reload.
+  function load() {
+    queryClient.invalidateQueries({ queryKey: ['products', 'all'] })
+  }
 
   async function handleDelete(product: Product) {
     const loadingToast = toast.loading(`Deleting ${product.name}…`)
@@ -331,442 +344,6 @@ export default function ProductManager({ role, assignedBranches }: Props) {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
-    </div>
-  )
-}
-
-function ProductModal({ product, onClose, onSave }: {
-  product: Product | null
-  onClose: () => void
-  onSave: () => void
-}) {
-  const [productCode, setProductCode] = useState(product?.productCode ?? '')
-  const [name, setName] = useState(product?.name ?? '')
-  const [category, setCategory] = useState(product?.category ?? '')
-  const [unitType, setUnitType] = useState(product?.unitType ?? 'Fixed')
-  const [isOpenLoose, setIsOpenLoose] = useState(product?.isOpenLoose ?? false)
-  const [isPooled, setIsPooled] = useState(product?.isPooled ?? false)
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-
-    const payload = { productCode: productCode.trim().toUpperCase(), name, category, unitType, isOpenLoose, isPooled }
-    const res = product
-      ? await fetch(`/api/products/${product._id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        })
-      : await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, variants: [] })
-        })
-
-    setSubmitting(false)
-    if (!res.ok) {
-      const err = await res.json()
-      toast.error(err.error ?? 'Failed to save product')
-      return
-    }
-    toast.success(product ? `${name} updated` : `${name} added to catalog`)
-    onSave()
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-sm">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <h2 className="text-base font-semibold text-slate-100">
-            {product ? 'Edit Product' : 'New Product'}
-          </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Product Code * <span className="text-slate-600">(unique, e.g. MILK-1L)</span></label>
-            <input
-              className="input-base font-mono uppercase"
-              value={productCode}
-              onChange={(e) => setProductCode(e.target.value.toUpperCase())}
-              required
-              placeholder="e.g. MILK-1L"
-              disabled={!!product}
-            />
-            {!!product && (
-              <p className="text-xs text-slate-600 mt-1">Product code cannot be changed after creation</p>
-            )}
-          </div>
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Name *</label>
-            <input
-              className="input-base"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              placeholder="e.g. Fresh Milk"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Category</label>
-            <input
-              className="input-base"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="e.g. Dairy"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Unit Type</label>
-            <select className="input-base" value={unitType} onChange={(e) => setUnitType(e.target.value)}>
-              <option value="Liquid">Liquid (litres)</option>
-              <option value="Weight">Weight (kg/g)</option>
-              <option value="Fixed">Fixed (pieces)</option>
-            </select>
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isOpenLoose}
-              onChange={(e) => setIsOpenLoose(e.target.checked)}
-              className="accent-blue-500"
-            />
-            <span className="text-sm text-slate-300">Open / Loose (allows decimal quantity)</span>
-          </label>
-          {(unitType === 'Liquid' || unitType === 'Weight') && (
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isPooled}
-                onChange={(e) => setIsPooled(e.target.checked)}
-                disabled={!!product}
-                className="accent-amber-500"
-              />
-              <span className="text-sm text-amber-300">
-                Pool Mode — shared tank, variants draw from it
-              </span>
-            </label>
-          )}
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={submitting} className="btn-primary flex-1">
-              {submitting ? 'Saving…' : 'Save Product'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function VariantModal({ productId, isPooled, onClose, onSave }: {
-  productId: string
-  isPooled?: boolean
-  onClose: () => void
-  onSave: () => void
-}) {
-  const [variantId, setVariantId] = useState('')
-  const [sizeLabel, setSizeLabel] = useState('')
-  const [portionSize, setPortionSize] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-
-    const res = await fetch(`/api/products/${productId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pushVariant: {
-          variantId,
-          sizeLabel,
-          portionSize: portionSize ? Number(portionSize) : 0,
-          branchDetails: []
-        }
-      })
-    })
-
-    setSubmitting(false)
-    if (!res.ok) {
-      const err = await res.json()
-      toast.error(err.error ?? 'Failed to add variant')
-      return
-    }
-    toast.success(`Variant "${variantId}" added`)
-    onSave()
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-sm">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <h2 className="text-base font-semibold text-slate-100">Add Variant</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Variant ID *</label>
-            <input
-              className="input-base font-mono"
-              value={variantId}
-              onChange={(e) => setVariantId(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
-              required
-              placeholder="e.g. milk_1l"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Display Label</label>
-            <input
-              className="input-base"
-              value={sizeLabel}
-              onChange={(e) => setSizeLabel(e.target.value)}
-              placeholder="e.g. 1 Litre"
-            />
-          </div>
-          {isPooled && (
-            <div>
-              <label className="text-xs text-amber-400 block mb-1.5">Portion Size * <span className="text-slate-500">(কতটুকু pool থেকে নেবে)</span></label>
-              <input
-                type="number"
-                className="input-base"
-                value={portionSize}
-                onChange={(e) => setPortionSize(e.target.value)}
-                required={isPooled}
-                min="0"
-                step="0.001"
-                placeholder="e.g. 0.5 for 500ml, 1 for 1L"
-              />
-            </div>
-          )}
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={submitting} className="btn-primary flex-1">
-              {submitting ? 'Adding…' : 'Add Variant'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function BranchStockModal({ productId, variantId, isPooled, branches, onClose, onSave }: {
-  productId: string
-  variantId: string
-  isPooled: boolean
-  branches: Branch[]
-  onClose: () => void
-  onSave: () => void
-}) {
-  const [branchId, setBranchId] = useState(branches[0]?._id ?? '')
-  const [buyingPrice, setBuyingPrice] = useState('')
-  const [mrpPrice, setMrpPrice] = useState('')
-  const [stockLevel, setStockLevel] = useState('0')
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-
-    const res = await fetch(`/api/products/${productId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        variantId,
-        branchId,
-        // pooled: only mrpPrice matters; buying/stock live on pool tank
-        buyingPrice: isPooled ? 0 : Number(buyingPrice),
-        mrpPrice: mrpPrice ? Number(mrpPrice) : undefined,
-        stockLevel: isPooled ? 0 : Number(stockLevel)
-      })
-    })
-
-    setSubmitting(false)
-    if (!res.ok) {
-      const err = await res.json()
-      toast.error(err.error ?? 'Failed to set price')
-      return
-    }
-    const branch = branches.find((b) => b._id === branchId)
-    toast.success(`Price set for ${branch?.name ?? 'branch'}`)
-    onSave()
-  }
-
-  if (branches.length === 0) {
-    return (
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="card w-full max-w-sm p-6 text-center">
-          <p className="text-slate-400 text-sm mb-4">Create a branch first before setting stock.</p>
-          <button onClick={onClose} className="btn-secondary">Close</button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-sm">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <div>
-            <h2 className="text-base font-semibold text-slate-100">
-              {isPooled ? 'Set Selling Price' : 'Set Branch Stock'}
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5 font-mono">{variantId}</p>
-          </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Branch</label>
-            <select className="input-base" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-              {branches.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
-            </select>
-          </div>
-          {!isPooled && (
-            <div>
-              <label className="text-xs text-slate-400 block mb-1.5">Buying Price ৳ *</label>
-              <input
-                type="number"
-                className="input-base"
-                value={buyingPrice}
-                onChange={(e) => setBuyingPrice(e.target.value)}
-                required
-                min="0"
-                placeholder="0"
-              />
-            </div>
-          )}
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">MRP / Selling Price ৳ *</label>
-            <input
-              type="number"
-              className="input-base"
-              value={mrpPrice}
-              onChange={(e) => setMrpPrice(e.target.value)}
-              required
-              min="0"
-              placeholder="0"
-            />
-          </div>
-          {!isPooled && (
-            <div>
-              <label className="text-xs text-slate-400 block mb-1.5">Stock Level</label>
-              <input
-                type="number"
-                className="input-base"
-                value={stockLevel}
-                onChange={(e) => setStockLevel(e.target.value)}
-                min="0"
-              />
-            </div>
-          )}
-          {isPooled && (
-            <p className="text-xs text-amber-500/70">⚠️ Stock for this pool product is managed via the Pool Tank — set it from the product page above.</p>
-          )}
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={submitting} className="btn-primary flex-1">
-              {submitting ? 'Saving…' : isPooled ? 'Set Price' : 'Set Stock'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function PooledStockModal({ productId, branches, onClose, onSave }: {
-  productId: string
-  branches: Branch[]
-  onClose: () => void
-  onSave: () => void
-}) {
-  const [branchId, setBranchId] = useState(branches[0]?._id ?? '')
-  const [stockQty, setStockQty] = useState('')
-  const [buyingPrice, setBuyingPrice] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!stockQty) { toast.error('Stock quantity required'); return }
-    setSubmitting(true)
-
-    const res = await fetch(`/api/products/${productId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        setPooledStock: true,
-        branchId,
-        stockQty: Number(stockQty),
-        buyingPrice: buyingPrice ? Number(buyingPrice) : 0
-      })
-    })
-
-    setSubmitting(false)
-    if (!res.ok) {
-      const err = await res.json()
-      toast.error(err.error ?? 'Failed to set pool stock')
-      return
-    }
-    const branch = branches.find((b) => b._id === branchId)
-    toast.success(`Pool stock set for ${branch?.name ?? 'branch'}`)
-    onSave()
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-sm">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <div>
-            <h2 className="text-base font-semibold text-amber-300">Set Pool Tank Stock</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Shared bulk stock for all variants</p>
-          </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Branch</label>
-            <select className="input-base" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-              {branches.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-amber-400 block mb-1.5">Total Pool Stock (L / kg) *</label>
-            <input
-              type="number"
-              className="input-base"
-              value={stockQty}
-              onChange={(e) => setStockQty(e.target.value)}
-              required
-              min="0"
-              step="0.001"
-              placeholder="e.g. 100"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Buying Price ৳ per unit (optional)</label>
-            <input
-              type="number"
-              className="input-base"
-              value={buyingPrice}
-              onChange={(e) => setBuyingPrice(e.target.value)}
-              min="0"
-              placeholder="e.g. 55 per litre"
-            />
-          </div>
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={submitting} className="btn-primary flex-1">
-              {submitting ? 'Saving…' : 'Set Pool Stock'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   )
 }

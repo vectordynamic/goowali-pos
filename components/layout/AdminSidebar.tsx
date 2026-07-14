@@ -21,7 +21,10 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
-import ChangePasswordModal from '@/components/admin/ChangePasswordModal'
+import dynamic from 'next/dynamic'
+
+// Code-split — only needed after the user clicks "Change Password" from the sidebar menu.
+const ChangePasswordModal = dynamic(() => import('@/components/admin/ChangePasswordModal'), { ssr: false })
 
 interface Branch {
   _id: string

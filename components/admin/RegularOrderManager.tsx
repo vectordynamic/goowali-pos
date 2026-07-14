@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
+import { useBranches } from '@/lib/queries/useBranches'
+import { useAllProducts } from '@/lib/queries/useProducts'
 
 interface Branch {
   _id: string
@@ -53,31 +55,31 @@ interface Props {
 }
 
 export default function RegularOrderManager({ role, assignedBranches }: Props) {
+  // Shared caches — see ProductManager.tsx / BranchManager.tsx, which write-invalidate these.
+  const { data: branchesData } = useBranches()
+  const branches: Branch[] = branchesData ?? []
+  const { data: productsData } = useAllProducts()
+  const products: Product[] = productsData ?? []
+
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [branches, setBranches] = useState<Branch[]>([])
-  const [products, setProducts] = useState<Product[]>([])
   const [branchFilter, setBranchFilter] = useState(
     role !== 'SUPER_ADMIN' && assignedBranches.length === 1 ? assignedBranches[0] : ''
   )
   const [loading, setLoading] = useState(true)
   const [editTarget, setEditTarget] = useState<Customer | null>(null)
 
+  // Fetch ALL customer types — both Retail and Paikari can have regular orders. Unique to
+  // this page (nothing else fetches this exact query), so left as a plain fetch rather than
+  // a shared hook — a mutation here only ever needs to refresh customers, never
+  // branches/products, which is itself an improvement over the old combined Promise.all.
   function load() {
     setLoading(true)
-    // Fetch ALL customer types — both Retail and Paikari can have regular orders
     const params = new URLSearchParams()
     if (branchFilter) params.set('branchId', branchFilter)
 
-    Promise.all([
-      fetch(`/api/customers?${params}`).then((r) => r.json()),
-      fetch('/api/branches').then((r) => r.json()),
-      fetch('/api/products?all=1').then((r) => r.json())
-    ])
-      .then(([c, b, p]) => {
-        setCustomers(Array.isArray(c) ? c : [])
-        setBranches(Array.isArray(b) ? b : [])
-        setProducts(Array.isArray(p) ? p : [])
-      })
+    fetch(`/api/customers?${params}`)
+      .then((r) => r.json())
+      .then((c) => setCustomers(Array.isArray(c) ? c : []))
       .catch(() => toast.error('Failed to load data'))
       .finally(() => setLoading(false))
   }
