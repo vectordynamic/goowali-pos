@@ -140,11 +140,11 @@ export default function StockManager({ branchId }: { branchId: string }) {
   }, [productsErrored])
 
   useEffect(() => {
-    fetch('/api/branch-admins')
+    fetch(`/api/branch-admins?branchId=${branchId}`)
       .then((r) => r.json())
       .then((data) => setOwners(Array.isArray(data) ? data : []))
       .catch(() => {})
-  }, [])
+  }, [branchId])
 
   // ── Normal mode helpers ──────────────────────────────────────────────────────
   function getStock(product: Product, variantId: string) {
