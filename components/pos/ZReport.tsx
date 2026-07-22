@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { TrendingUp, TrendingDown, CheckCircle2, MessageSquare, Lock } from 'lucide-react'
 import { formatCurrency, today } from '@/lib/utils'
 import { useProducts } from '@/lib/queries/useProducts'
-import { useDailyClosing } from '@/lib/queries/useDailyClosing'
+import { useDailyClosing, useActiveClosingDate } from '@/lib/queries/useDailyClosing'
 
 interface SystemTotals {
   openingCash: number
@@ -62,7 +62,13 @@ const STOCK_REASON_THRESHOLD = 1   // 1 unit (L / kg / pcs)
 export default function ZReport({ branchId }: { branchId: string }) {
   const queryClient = useQueryClient()
   const todayDate = today()
-  const closingKey = ['daily-closing', branchId, todayDate]
+
+  // The day to close may be an earlier still-Open day (must be force-closed before a new day
+  // can start), not necessarily today. Resolve it, then drive the whole report off that date.
+  const { data: resolvedDate, isLoading: activeLoading } = useActiveClosingDate(branchId)
+  const activeDate = resolvedDate ?? todayDate
+  const isStaleDay = activeDate < todayDate
+  const closingKey = ['daily-closing', branchId, activeDate]
 
   const [justFinished, setJustFinished] = useState(false)
 
@@ -80,10 +86,10 @@ export default function ZReport({ branchId }: { branchId: string }) {
 
   // ── Shared cache with POSTerminal (same branch+date) and StockManager/DailyOrders
   // (product catalog) — see lib/queries/*.
-  const { data: closingData, isLoading: closingLoading, isError: closingErrored } = useDailyClosing(branchId, todayDate)
+  const { data: closingData, isLoading: closingLoading, isError: closingErrored } = useDailyClosing(branchId, activeDate)
   const { data: productsData, isLoading: productsLoading } = useProducts(branchId)
   const products: Product[] = productsData ?? []
-  const loading = closingLoading || productsLoading
+  const loading = activeLoading || closingLoading || productsLoading
 
   const dayStatus: string | null = closingLoading ? null : (closingData?.status ?? 'Pending').toLowerCase()
   const systemTotals: SystemTotals | null = closingData?.mathematicalSystemTotals ?? null
@@ -190,27 +196,27 @@ export default function ZReport({ branchId }: { branchId: string }) {
         fetch('/api/daily-closing', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ branchId, date: today(), action: 'nightCash', nightCash: Number(nightCash) }),
+          body: JSON.stringify({ branchId, date: activeDate, action: 'nightCash', nightCash: Number(nightCash) }),
         }),
         cashReason
           ? fetch('/api/daily-closing', {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ branchId, date: today(), action: 'cashReason', reason: cashReason }),
+              body: JSON.stringify({ branchId, date: activeDate, action: 'cashReason', reason: cashReason }),
             })
           : Promise.resolve(),
         physicalStock.length > 0
           ? fetch('/api/daily-closing', {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ branchId, date: today(), action: 'physicalStock', physicalStock }),
+              body: JSON.stringify({ branchId, date: activeDate, action: 'physicalStock', physicalStock }),
             })
           : Promise.resolve(),
         preOrders.length > 0
           ? fetch('/api/daily-closing', {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ branchId, date: today(), action: 'preOrders', preOrders }),
+              body: JSON.stringify({ branchId, date: activeDate, action: 'preOrders', preOrders }),
             })
           : Promise.resolve(),
         Object.entries(stockReasons).some(([, reason]) => reason)
@@ -219,7 +225,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 branchId,
-                date: today(),
+                date: activeDate,
                 action: 'stockReasons',
                 reasons: Object.entries(stockReasons)
                   .filter(([, reason]) => reason)
@@ -237,7 +243,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           branchId,
-          date: today(),
+          date: activeDate,
           physicalCashCounted: Number(nightCash),
           remainingMilkStock,
         }),
@@ -325,6 +331,15 @@ export default function ZReport({ branchId }: { branchId: string }) {
 
   return (
     <div className="space-y-6 w-full pb-4">
+
+      {isStaleDay && (
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 px-5 py-4">
+          <p className="text-lg font-black text-amber-800">⚠️ গতকালের হিসাব এখনো বন্ধ হয়নি</p>
+          <p className="text-sm text-amber-700 mt-1">
+            {activeDate} তারিখের স্টক গণনা ও নগদ মিলান করে "দিন শেষ করুন" চাপুন। এই দিনের হিসাব বন্ধ না করলে নতুন দিন শুরু করা যাবে না।
+          </p>
+        </div>
+      )}
 
       {/* ── রাতের ক্যাশ চেক ── */}
       <div className="lcard overflow-hidden">

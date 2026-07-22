@@ -31,15 +31,16 @@ export async function GET(req: NextRequest) {
   const { default: Customer } = await import('@/models/Customer')
   const { default: DailyOrderLog } = await import('@/models/DailyOrderLog')
 
-  // All customers in this branch that have at least one fixed rate configured
+  // Permanent Paikari customers with a standing order. Temporary/pending/rejected bookings are
+  // excluded from auto-create — a temporary customer only ever surfaces on the specific date its
+  // isTemporary log was booked for (the log already exists, so it still shows via the query below).
   const customers = await Customer.find({
     registeredBranch: branchId,
-    'paikariConfig.fixedProductRates.0': { $exists: true }
+    'paikariConfig.fixedProductRates.0': { $exists: true },
+    approvalStatus: { $nin: ['temporary', 'pending', 'rejected'] }
   }).lean()
 
-  if (customers.length === 0) return NextResponse.json([])
-
-  // Upsert a pending log for each customer that doesn't have one yet today
+  // Upsert a pending log for each permanent customer that doesn't have one yet today.
   if (customers.length > 0) {
     await DailyOrderLog.bulkWrite(
       customers.map((c: any) => ({
@@ -53,19 +54,25 @@ export async function GET(req: NextRequest) {
   }
 
   const logs = await DailyOrderLog.find({ branchId, date })
-    .populate('customerId', 'name phone location customerType paikariConfig khata')
+    .populate('customerId', 'name phone location customerType paikariConfig khata approvalStatus')
     .populate('transactionId', 'items financials.totalBill')
     .sort({ createdAt: 1 })
     .lean()
 
+  if (logs.length === 0) return NextResponse.json([])
+
   // Compute stock availability for each pending order so the UI can disable Taken button
-  // and let the manager adjust today's quantity within what's actually available.
+  // and let the manager adjust today's quantity within what's actually available. Product IDs
+  // come from the populated logs (not the permanent `customers` query) so temporary bookings —
+  // which aren't in that query — get their stock checked too.
   const { default: Product } = await import('@/models/Product')
 
   const allProductIds = [
     ...new Set(
-      customers.flatMap((c: any) =>
-        (c.paikariConfig?.fixedProductRates ?? []).map((r: any) => r.productId.toString())
+      logs.flatMap((log: any) =>
+        ((log.customerId as any)?.paikariConfig?.fixedProductRates ?? []).map((r: any) =>
+          r.productId.toString()
+        )
       )
     )
   ]
@@ -79,35 +86,45 @@ export async function GET(req: NextRequest) {
     const product = (products as any[]).find(
       (p: any) => p._id.toString() === rate.productId.toString()
     )
-    if (!product) return { name: 'Unknown', available: 0 }
+    // Stale order: the product/variant no longer exists (product deleted or recreated with new
+    // ids). `found: false` lets the UI say "product missing — fix the order" instead of a
+    // misleading "0 in stock".
+    if (!product) return { name: 'Unknown', available: 0, found: false }
 
     const variant = product.variants.find((v: any) => v.variantId === rate.variantId)
-    if (!variant) return { name: product.name, available: 0 }
+    if (!variant) return { name: product.name, available: 0, found: false }
 
     if (product.isPooled) {
       const pool = product.pooledStock?.find((p: any) => p.branchId.toString() === branchId)
       const portion = variant.portionSize || 1
       const available = pool ? Math.floor((pool.stockQty / portion) * 100) / 100 : 0
-      return { name: product.name, available }
+      return { name: product.name, available, found: true }
     }
 
     const bd = variant.branchDetails.find((b: any) => b.branchId.toString() === branchId)
-    return { name: product.name, available: bd?.stockLevel ?? 0 }
+    return { name: product.name, available: bd?.stockLevel ?? 0, found: true }
   }
 
   const logsWithStock = logs.map((log: any) => {
     const rates = (log.customerId as any)?.paikariConfig?.fixedProductRates ?? []
     const stockInfo = rates.map((rate: any) => {
-      const { name, available } = availableFor(rate)
-      return { productId: rate.productId, variantId: rate.variantId, name, available }
+      const { name, available, found } = availableFor(rate)
+      return { productId: rate.productId, variantId: rate.variantId, name, available, found }
     })
 
     if (log.status !== 'pending') return { ...log, stockOk: true, stockIssues: [], stockInfo }
 
+    // Confirmed-on-call quantity (set the night before) is the real need if present, else the
+    // standing daily default.
+    const confirmed: any[] = log.confirmedItems ?? []
     const stockIssues: string[] = []
     stockInfo.forEach((s: any, i: number) => {
-      const need = rates[i].dailyQty || 1
-      if (s.available < need) stockIssues.push(`${s.name}: need ${need}, have ${s.available}`)
+      const rate = rates[i]
+      const conf = confirmed.find(
+        (ci: any) => ci.productId.toString() === rate.productId.toString() && ci.variantId === rate.variantId
+      )
+      const need = conf ? conf.quantity : (rate.dailyQty || 1)
+      if (need > 0 && s.available < need) stockIssues.push(`${s.name}: need ${need}, have ${s.available}`)
     })
 
     return { ...log, stockOk: stockIssues.length === 0, stockIssues, stockInfo }
@@ -190,6 +207,19 @@ export async function PATCH(req: NextRequest) {
         const qty = Number(o.quantity)
         if (!cfg || !qty || qty <= 0) return null
         return { productId: cfg.productId, variantId: cfg.variantId, lockedRate: cfg.lockedRate, qty }
+      })
+      .filter((x: any): x is NonNullable<typeof x> => x !== null)
+  } else if (Array.isArray(log.confirmedItems) && log.confirmedItems.length > 0) {
+    // No explicit override from the client — fall back to what the customer confirmed on the
+    // call the night before. Price still comes from the locked config, never the log.
+    dispatchList = rates
+      .map((r: any) => {
+        const conf = log.confirmedItems.find(
+          (ci: any) => ci.productId.toString() === r.productId.toString() && ci.variantId === r.variantId
+        )
+        const qty = conf ? Number(conf.quantity) : (r.dailyQty || 1)
+        if (!qty || qty <= 0) return null
+        return { productId: r.productId, variantId: r.variantId, lockedRate: r.lockedRate, qty }
       })
       .filter((x: any): x is NonNullable<typeof x> => x !== null)
   } else {

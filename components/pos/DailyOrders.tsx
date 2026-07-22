@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ClipboardList, RefreshCw, Minus, Plus } from 'lucide-react'
+import { ClipboardList, RefreshCw, Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useProducts } from '@/lib/queries/useProducts'
 
@@ -20,8 +20,13 @@ interface Customer {
   _id: string
   name: string
   phone: string
+  location?: string
   customerType: 'Retail' | 'Paikari'
-  paikariConfig: { fixedProductRates: FixedRate[] }
+  paikariConfig: {
+    deliveryMethod?: 'Pickup' | 'Send'
+    deliveryTime?: string
+    fixedProductRates: FixedRate[]
+  }
   khata: { currentDue: number }
 }
 
@@ -32,11 +37,18 @@ interface DispatchedItem {
   rateApplied: number
 }
 
+interface ConfirmedItem {
+  productId: string
+  variantId: string
+  quantity: number
+}
+
 interface StockInfo {
   productId: string
   variantId: string
   name: string
   available: number
+  found?: boolean
 }
 
 interface OrderLog {
@@ -46,13 +58,17 @@ interface OrderLog {
   stockOk: boolean
   stockIssues: string[]
   stockInfo?: StockInfo[]
+  confirmedItems?: ConfirmedItem[]
+  isTemporary?: boolean
+  callStatus?: 'not_called' | 'called' | 'no_answer' | 'skipped'
+  overrideDeliveryTime?: string
   transactionId?: { items: DispatchedItem[]; financials: { totalBill: number } } | null
 }
 
 interface ProductLite {
   _id: string
   name: string
-  variants: Array<{ variantId: string; sizeLabel?: string }>
+  variants: Array<{ variantId: string; sizeLabel?: string; portionSize?: number }>
 }
 
 interface Props {
@@ -66,6 +82,7 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
   const ordersKey = ['daily-orders', branchId, date]
 
   const [acting, setActing] = useState<Record<string, boolean>>({})
+  const [showSkipped, setShowSkipped] = useState(false)
   // For partial only: track the cash amount being entered
   const [partialInput, setPartialInput] = useState<Record<string, string>>({})
   // Today's quantity can differ from the configured daily default — keyed `${customerId}:${idx}`
@@ -110,6 +127,15 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
     setQtyOverride((prev) => ({ ...prev, [key]: Math.max(0, Math.round(value * 10) / 10) }))
   }
 
+  // Standing default for a line = what the customer confirmed on last night's call, if any,
+  // else the configured daily quantity.
+  function confirmedQty(log: OrderLog, rate: FixedRate) {
+    const conf = log.confirmedItems?.find(
+      (ci) => ci.productId === rate.productId && ci.variantId === rate.variantId
+    )
+    return conf ? conf.quantity : (rate.dailyQty || 1)
+  }
+
   async function act(customerId: string, status: 'taken' | 'skipped', paymentType?: PaymentType, cashPaid?: number, items?: { productId: string; variantId: string; quantity: number }[]) {
     setActing((p) => ({ ...p, [customerId]: true }))
 
@@ -149,7 +175,7 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
       .map((r, idx) => ({
         productId: r.productId,
         variantId: r.variantId,
-        quantity: getQty(c._id, idx, r.dailyQty || 1)
+        quantity: getQty(c._id, idx, confirmedQty(log, r))
       }))
       .filter((i) => i.quantity > 0)
 
@@ -173,6 +199,55 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
   const taken = logs.filter((l) => l.status === 'taken').length
   const skipped = logs.filter((l) => l.status === 'skipped').length
 
+  // Effective time = the per-day call override, else the customer's standing delivery time.
+  const effTime = (log: OrderLog) =>
+    log.overrideDeliveryTime ?? log.customerId.paikariConfig?.deliveryTime ?? ''
+  const toMin = (t: string) => {
+    if (!t) return 9999
+    const [h, m] = t.split(':').map(Number)
+    return (h || 0) * 60 + (m || 0)
+  }
+  const byTime = (a: OrderLog, b: OrderLog) => toMin(effTime(a)) - toMin(effTime(b))
+
+  // Delivery worklist: Send round first (time-sorted), then Pickup, then done, then a
+  // collapsed "won't take / skipped" bucket.
+  const sendPending = logs.filter((l) => l.status === 'pending' && l.customerId.paikariConfig?.deliveryMethod === 'Send').sort(byTime)
+  const pickupPending = logs.filter((l) => l.status === 'pending' && l.customerId.paikariConfig?.deliveryMethod !== 'Send').sort(byTime)
+  const doneLogs = logs.filter((l) => l.status === 'taken')
+  const skippedLogs = logs.filter((l) => l.status === 'skipped')
+
+  type RowItem = { type: 'head'; label: string } | { type: 'toggle'; label: string } | { type: 'row'; log: OrderLog }
+  const items: RowItem[] = []
+  if (sendPending.length) { items.push({ type: 'head', label: `🚚 পৌঁছে দিতে হবে (${sendPending.length})` }); sendPending.forEach((l) => items.push({ type: 'row', log: l })) }
+  if (pickupPending.length) { items.push({ type: 'head', label: `🏪 দোকানে আসবে (${pickupPending.length})` }); pickupPending.forEach((l) => items.push({ type: 'row', log: l })) }
+  if (doneLogs.length) { items.push({ type: 'head', label: `✅ সম্পন্ন (${doneLogs.length})` }); doneLogs.forEach((l) => items.push({ type: 'row', log: l })) }
+  if (skippedLogs.length) { items.push({ type: 'toggle', label: `নেবে না / দেওয়া হয়নি (${skippedLogs.length})` }); if (showSkipped) skippedLogs.forEach((l) => items.push({ type: 'row', log: l })) }
+
+  // ── Totals in weight/volume (kg / L) ──────────────────────────────────────────
+  // portionSize converts a variant unit to real weight: 1kg→1, 500gm→0.5. Falls back to 1
+  // for products with no portion (piece-counted), so those add as whole units.
+  function portionOf(productId: string, variantId: string) {
+    const v = products.find((p) => p._id === productId)?.variants.find((x) => x.variantId === variantId)
+    return v?.portionSize && v.portionSize > 0 ? v.portionSize : 1
+  }
+  function logVolume(log: OrderLog) {
+    if (log.status === 'taken' && log.transactionId) {
+      return log.transactionId.items.reduce((s, it) => s + it.quantity * portionOf(it.productId, it.variantId), 0)
+    }
+    const rates = log.customerId.paikariConfig?.fixedProductRates ?? []
+    return rates.reduce((s, r, idx) => s + getQty(log.customerId._id, idx, confirmedQty(log, r)) * portionOf(r.productId, r.variantId), 0)
+  }
+  const activeLogs = logs.filter((l) => l.status !== 'skipped')     // real orders for the day
+  const totalDaily = activeLogs.reduce((s, l) => s + logVolume(l), 0)
+  const totalConfirmed = activeLogs
+    .filter((l) => l.callStatus === 'called' && (l.confirmedItems?.length ?? 0) > 0)
+    .reduce((s, l) => s + logVolume(l), 0)
+  const totalDelivery = activeLogs
+    .filter((l) => l.customerId.paikariConfig?.deliveryMethod === 'Send')
+    .reduce((s, l) => s + logVolume(l), 0)
+  const totalRemaining = logs.filter((l) => l.status === 'pending').reduce((s, l) => s + logVolume(l), 0)
+  const kg = (n: number) => `${Math.round(n * 100) / 100} কেজি`
+
   return (
     <div className="mb-6 lcard overflow-hidden">
       {/* Header */}
@@ -182,31 +257,74 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
         <div className="flex items-center gap-3 ml-auto text-sm font-bold">
           {pending > 0 && <span className="text-amber-600">{pending} বাকি</span>}
           {taken > 0 && <span className="text-green-600">{taken} দেওয়া হয়েছে</span>}
-          {skipped > 0 && <span className="text-gray-400">{skipped} দেওয়া হয়নি</span>}
+          {skipped > 0 && <span className="text-gray-400">{skipped} বাদ</span>}
           <button onClick={load} className="p-1.5 text-gray-400 hover:text-blue-600 rounded-xl">
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
       </div>
 
+      {/* Weight totals for the day */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-gray-100 border-b border-gray-100">
+        <div className="bg-white px-4 py-2.5">
+          <p className="text-xs font-bold text-gray-400">মোট অর্ডার</p>
+          <p className="text-lg font-black text-gray-800">{kg(totalDaily)}</p>
+        </div>
+        <div className="bg-white px-4 py-2.5">
+          <p className="text-xs font-bold text-gray-400">কনফার্ম</p>
+          <p className="text-lg font-black text-green-600">{kg(totalConfirmed)}</p>
+        </div>
+        <div className="bg-white px-4 py-2.5">
+          <p className="text-xs font-bold text-gray-400">🚚 ডেলিভারি</p>
+          <p className="text-lg font-black text-blue-600">{kg(totalDelivery)}</p>
+        </div>
+        <div className="bg-white px-4 py-2.5">
+          <p className="text-xs font-bold text-gray-400">বাকি</p>
+          <p className="text-lg font-black text-amber-600">{kg(totalRemaining)}</p>
+        </div>
+      </div>
+
       <div className="divide-y divide-gray-100">
-        {logs.map((log) => {
+        {items.map((it, i) => {
+          if (it.type === 'head') {
+            return (
+              <div key={`h${i}`} className="px-4 py-2 bg-gray-50 text-sm font-black text-gray-500">
+                {it.label}
+              </div>
+            )
+          }
+          if (it.type === 'toggle') {
+            return (
+              <button
+                key={`t${i}`}
+                onClick={() => setShowSkipped((s) => !s)}
+                className="w-full flex items-center gap-1.5 px-4 py-2.5 bg-gray-50 text-sm font-black text-gray-500 hover:text-gray-700"
+              >
+                {showSkipped ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                {it.label}
+              </button>
+            )
+          }
+          const log = it.log
           const c = log.customerId
           const rates = c.paikariConfig?.fixedProductRates ?? []
           const defaultTotal = rates.reduce((s, r) => s + r.lockedRate * (r.dailyQty || 1), 0)
           const busy = acting[c._id]
           const isPending = log.status === 'pending'
           const showingPartial = partialInput[c._id] !== undefined
+          const time = effTime(log)
+          const isSend = c.paikariConfig?.deliveryMethod === 'Send'
+          const confirmedOnCall = log.callStatus === 'called' && (log.confirmedItems?.length ?? 0) > 0
 
           const liveTotal = isPending
-            ? rates.reduce((s, r, idx) => s + r.lockedRate * getQty(c._id, idx, r.dailyQty || 1), 0)
+            ? rates.reduce((s, r, idx) => s + r.lockedRate * getQty(c._id, idx, confirmedQty(log, r)), 0)
             : log.status === 'taken' && log.transactionId
             ? log.transactionId.financials.totalBill
             : defaultTotal
 
           const overLimit = isPending && rates.some((r, idx) => {
             const available = log.stockInfo?.[idx]?.available ?? Infinity
-            return getQty(c._id, idx, r.dailyQty || 1) > available
+            return getQty(c._id, idx, confirmedQty(log, r)) > available
           })
 
           return (
@@ -231,6 +349,24 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
                   }`}>
                     {c.customerType === 'Paikari' ? 'পাইকারি' : 'খুচরা'}
                   </span>
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded-lg font-bold bg-gray-100 text-gray-600">
+                    {isSend ? '🚚' : '🏪'} {time || '—'}
+                  </span>
+                  {log.isTemporary ? (
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-lg font-bold bg-purple-100 text-purple-700">
+                      🆕 নতুন
+                    </span>
+                  ) : isPending ? (
+                    confirmedOnCall ? (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded-lg font-bold bg-green-100 text-green-700">
+                        📞 কনফার্ম
+                      </span>
+                    ) : (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded-lg font-bold bg-amber-100 text-amber-700">
+                        ❗কনফার্ম হয়নি
+                      </span>
+                    )
+                  ) : null}
                   <p className="text-sm text-gray-500 mt-0.5">
                     {rates.length} পণ্য · <span className="font-bold text-gray-700">{formatCurrency(liveTotal)}/দিন</span>
                     {c.khata.currentDue > 0 && (
@@ -262,9 +398,11 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
               {isPending && (
                 <div className="pl-5 space-y-2">
                   {rates.map((rate, idx) => {
-                    const qty = getQty(c._id, idx, rate.dailyQty || 1)
-                    const available = log.stockInfo?.[idx]?.available ?? Infinity
-                    const short = qty > available
+                    const qty = getQty(c._id, idx, confirmedQty(log, rate))
+                    const info = log.stockInfo?.[idx]
+                    const available = info?.available ?? Infinity
+                    const missing = info?.found === false
+                    const short = missing || qty > available
                     return (
                       <div key={idx} className={`flex items-center gap-2 rounded-xl px-3 py-2.5 ${short ? 'bg-red-50' : 'bg-gray-50'}`}>
                         <span className="flex-1 min-w-0 text-base font-bold text-gray-800 truncate">
@@ -296,7 +434,9 @@ export default function DailyOrders({ branchId, date, onTaken }: Props) {
                         >
                           <Plus className="w-4 h-4" strokeWidth={3} />
                         </button>
-                        {short && (
+                        {missing ? (
+                          <span className="text-xs font-bold text-red-500 flex-shrink-0">⚠️ পণ্য নেই — অর্ডার ঠিক করুন</span>
+                        ) : short && (
                           <span className="text-xs font-bold text-red-500 flex-shrink-0">মাত্র {available} আছে</span>
                         )}
                       </div>

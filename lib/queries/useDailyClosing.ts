@@ -18,3 +18,20 @@ export function useDailyClosing(branchId: string, date: string) {
     enabled: !!branchId && !!date,
   })
 }
+
+// Resolves the day the manager must act on in the Z-Report: the earliest still-Open day
+// (a stale unclosed day that must be closed before a new one can start), else today. Kept
+// separate from useDailyClosing so the Z-Report can target a prior open date even after the
+// system date has rolled over past it.
+export function useActiveClosingDate(branchId: string) {
+  return useQuery({
+    queryKey: ['daily-closing-active', branchId],
+    queryFn: async (): Promise<string> => {
+      const res = await fetch(`/api/daily-closing?branchId=${branchId}&active=1`)
+      if (!res.ok) throw new Error('হিসাব লোড হয়নি')
+      const data = await res.json()
+      return data.activeDate as string
+    },
+    enabled: !!branchId,
+  })
+}

@@ -73,6 +73,11 @@ export async function GET(req: NextRequest) {
     ]
   }
 
+  // Never surface one-time / pending / rejected bookings in the normal customer lists — they
+  // are managed through the call sheet and the admin approvals page. $nin keeps legacy rows
+  // (no approvalStatus) visible.
+  filter.approvalStatus = { $nin: ['temporary', 'pending', 'rejected'] }
+
   // Safety cap — this route has no pagination UI yet (see PERFORMANCE_ANALYSIS.md), so this
   // is a ceiling against a pathological unbounded return, not a real page size. Far above any
   // realistic current customer count; raise (and add real pagination) if that stops being true.

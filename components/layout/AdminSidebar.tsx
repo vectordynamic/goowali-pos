@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
@@ -17,7 +17,8 @@ import {
   History,
   LayoutDashboard,
   KeyRound,
-  Banknote
+  Banknote,
+  BellRing
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -43,6 +44,7 @@ const adminNavItems = [
   { href: '/products', label: 'Products', icon: Package, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/customers', label: 'Customers', icon: UserRound, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/regular-orders', label: 'Regular Orders', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
+  { href: '/customer-approvals', label: 'Approvals', icon: BellRing, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/due', label: 'Due Collection', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/stock-log', label: 'Stock Log', icon: History, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/owner-ledger', label: 'Owner Ledger', icon: Banknote, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
@@ -53,6 +55,23 @@ const adminNavItems = [
 export default function AdminSidebar({ role, assignedBranches, branchList = [] }: Props) {
   const pathname = usePathname()
   const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [pendingApprovals, setPendingApprovals] = useState(0)
+
+  // Pending-approval badge — poll lightly so a manager's new request surfaces without a reload.
+  useEffect(() => {
+    let alive = true
+    async function fetchCount() {
+      try {
+        const res = await fetch('/api/customer-approvals?count=1')
+        if (!res.ok) return
+        const data = await res.json()
+        if (alive) setPendingApprovals(data.count ?? 0)
+      } catch { /* non-fatal */ }
+    }
+    fetchCount()
+    const t = setInterval(fetchCount, 60000)
+    return () => { alive = false; clearInterval(t) }
+  }, [pathname])
 
   const visibleItems = adminNavItems.filter((item) => item.roles.includes(role))
 
@@ -103,6 +122,11 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
             >
               <item.icon className="w-4 h-4 flex-shrink-0" />
               {label}
+              {item.href === '/customer-approvals' && pendingApprovals > 0 && (
+                <span className="ml-auto min-w-[18px] h-[18px] px-1 flex items-center justify-center text-xs font-bold rounded-full bg-rose-500 text-white">
+                  {pendingApprovals}
+                </span>
+              )}
             </Link>
           )
         })}

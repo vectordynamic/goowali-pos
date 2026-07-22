@@ -4,6 +4,10 @@ export type Role = 'SUPER_ADMIN' | 'BRANCH_ADMIN' | 'MANAGER'
 
 export type CustomerType = 'Retail' | 'Paikari'
 
+export type CustomerApprovalStatus = 'approved' | 'pending' | 'rejected' | 'temporary'
+
+export type CallStatus = 'not_called' | 'called' | 'no_answer' | 'skipped'
+
 export type UnitType = 'Liquid' | 'Weight' | 'Fixed'
 
 export type TransactionType =
@@ -70,14 +74,46 @@ export interface ICustomer {
   customerType: CustomerType
   paikariConfig: {
     deliveryMethod: 'Pickup' | 'Send'
+    deliveryTime: string
     dailyRequirementLiters: number
     fixedProductRates: IFixedRate[]
   }
+  approvalStatus: CustomerApprovalStatus
+  approvalRequestedBy?: Types.ObjectId
+  approvalRequestedAt?: Date
+  approvalNote?: string
   khata: {
     currentDue: number
     lastPaymentDate?: Date
     creditLimit: number
   }
+  createdAt: Date
+  updatedAt: Date
+}
+
+// ─── Daily Order Log (call sheet + dispatch) ────────────────────────────────
+
+export interface IConfirmedItem {
+  productId: Types.ObjectId
+  variantId: string
+  quantity: number
+}
+
+export interface IDailyOrderLog {
+  _id: Types.ObjectId
+  branchId: Types.ObjectId
+  date: string
+  customerId: Types.ObjectId
+  status: 'pending' | 'taken' | 'skipped'
+  callStatus: CallStatus
+  confirmedItems: IConfirmedItem[]
+  overrideDeliveryTime?: string
+  callNotes?: string
+  calledBy?: Types.ObjectId
+  calledAt?: Date
+  isTemporary: boolean
+  transactionId?: Types.ObjectId
+  updatedBy?: Types.ObjectId
   createdAt: Date
   updatedAt: Date
 }

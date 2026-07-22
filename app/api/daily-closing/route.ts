@@ -97,6 +97,17 @@ export async function GET(req: NextRequest) {
 
   await dbConnect()
 
+  // ?active=1 — which day should the manager be acting on? The earliest day still left Open
+  // (a stale unclosed day blocks starting a new one), else today. Lets the Z-Report target and
+  // force-close a prior open day even after the date has rolled over.
+  if (req.nextUrl.searchParams.get('active') === '1') {
+    const openDay = await DailyClosing.findOne({ branchId, status: 'Open', date: { $lte: today() } })
+      .sort({ date: 1 })
+      .select('date')
+      .lean() as any
+    return NextResponse.json({ activeDate: openDay?.date ?? today() })
+  }
+
   // Today's own doc doesn't depend on yesterday's — fetch both in parallel instead of serially.
   const [yesterday, closing] = await Promise.all([
     DailyClosing.findOne({ branchId, date: prevDate(date) }),
@@ -153,6 +164,27 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json(
         { error: 'Day already started', status: existing.status },
         { status: 409 }
+      )
+    }
+
+    // Force stock-close of any earlier day left Open. The manager must submit that day's
+    // Z-Report (physical stock + night cash count) before a new day can begin — otherwise
+    // the opening-cash carry-forward and stock reconciliation for the unclosed day are lost.
+    // 403 (not 409) so the POS surfaces this message instead of silently refetching.
+    const priorOpen = await DailyClosing.findOne({
+      branchId,
+      status: 'Open',
+      date: { $lt: targetDate }
+    })
+      .sort({ date: 1 })
+      .lean() as any
+    if (priorOpen) {
+      return NextResponse.json(
+        {
+          error: `${priorOpen.date} তারিখের হিসাব এখনো বন্ধ হয়নি। নতুন দিন শুরু করার আগে ওই দিনের "দিন শেষ করুন" (স্টক গণনা ও নগদ মিলান) সম্পন্ন করুন।`,
+          blockedByOpenDate: priorOpen.date
+        },
+        { status: 403 }
       )
     }
 

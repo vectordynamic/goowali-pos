@@ -21,7 +21,7 @@ export default withAuth(
     }
 
     // Admin-only pages: MANAGERs get silently sent to their POS
-    const adminOnlyPaths = ['/analytics', '/users', '/products', '/customers', '/regular-orders', '/wholesale-orders', '/due', '/branches']
+    const adminOnlyPaths = ['/analytics', '/users', '/products', '/customers', '/customer-approvals', '/regular-orders', '/wholesale-orders', '/due', '/branches']
     if (adminOnlyPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
       if (role === 'MANAGER') {
         const branchId = assignedBranches[0]
@@ -32,7 +32,7 @@ export default withAuth(
     }
 
     // /[branchId]/(pos|transactions|customers|stock|due|z-report)
-    const posMatch = pathname.match(/^\/([a-f0-9]{24})\/(pos|transactions|customers|stock|due|z-report)/)
+    const posMatch = pathname.match(/^\/([a-f0-9]{24})\/(pos|transactions|customers|stock|due|z-report|next-day-orders)/)
     if (posMatch) {
       const branchId = posMatch[1]
       const section = posMatch[2]

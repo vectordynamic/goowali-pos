@@ -44,6 +44,7 @@ interface Customer {
   registeredBranch?: string
   paikariConfig: {
     deliveryMethod: 'Pickup' | 'Send'
+    deliveryTime?: string
     dailyRequirementLiters: number
     fixedProductRates: FixedRate[]
   }
@@ -204,6 +205,9 @@ export default function RegularOrderManager({ role, assignedBranches }: Props) {
                     </div>
                     <p className="text-xs text-slate-500 mt-1.5">
                       Delivery: {c.paikariConfig.deliveryMethod}
+                      {c.paikariConfig.deliveryTime && (
+                        <span className="text-slate-400"> · {c.paikariConfig.deliveryTime}</span>
+                      )}
                     </p>
                   </div>
                 ) : (
@@ -287,6 +291,7 @@ function RegularOrderModal({
   const [deliveryMethod, setDeliveryMethod] = useState<'Pickup' | 'Send'>(
     customer.paikariConfig?.deliveryMethod ?? 'Pickup'
   )
+  const [deliveryTime, setDeliveryTime] = useState(customer.paikariConfig?.deliveryTime ?? '06:00')
   const [submitting, setSubmitting] = useState(false)
 
   function addRow() {
@@ -340,6 +345,7 @@ function RegularOrderModal({
       body: JSON.stringify({
         paikariConfig: {
           deliveryMethod,
+          deliveryTime,
           dailyRequirementLiters: validRates.reduce((s, r) => s + r.dailyQty, 0),
           fixedProductRates: validRates.map((r) => ({
             productId: r.productId,
@@ -386,24 +392,35 @@ function RegularOrderModal({
         </div>
 
         <form id="regular-order-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Delivery method */}
-          <div>
-            <label className="text-xs text-slate-400 block mb-1.5">Delivery Method</label>
-            <div className="flex gap-2">
-              {(['Pickup', 'Send'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setDeliveryMethod(m)}
-                  className={`px-3 py-1.5 text-xs rounded-md border font-medium transition-colors ${
-                    deliveryMethod === m
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-100'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
+          {/* Delivery method + time */}
+          <div className="flex items-end gap-4">
+            <div>
+              <label className="text-xs text-slate-400 block mb-1.5">Delivery Method</label>
+              <div className="flex gap-2">
+                {(['Pickup', 'Send'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setDeliveryMethod(m)}
+                    className={`px-3 py-1.5 text-xs rounded-md border font-medium transition-colors ${
+                      deliveryMethod === m
+                        ? 'bg-blue-600 border-blue-500 text-white'
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-100'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1.5">Delivery Time</label>
+              <input
+                type="time"
+                className="input-base w-32"
+                value={deliveryTime}
+                onChange={(e) => setDeliveryTime(e.target.value)}
+              />
             </div>
           </div>
 

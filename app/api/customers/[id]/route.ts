@@ -35,6 +35,35 @@ export async function GET(
     }
   }
 
+  // ?statement=1 — dated khata statement: every credit sale (adds due) and collection
+  // (reduces due) in chronological order, so the UI can render a running balance.
+  if (req.nextUrl.searchParams.get('statement') === '1') {
+    const rows = await Transaction.find({
+      customerId: id,
+      transactionType: { $in: ['Credit Sale', 'Partial Payment', 'Due Collection'] }
+    })
+      .select('createdAt transactionType items financials.totalBill financials.cashPaid financials.amountAddedToKhata notes')
+      .sort({ createdAt: 1 })
+      .lean()
+
+    const statement = (rows as any[]).map((r) => ({
+      _id: r._id,
+      createdAt: r.createdAt,
+      transactionType: r.transactionType,
+      items: (r.items ?? []).map((it: any) => ({
+        variantId: it.variantId,
+        quantity: it.quantity,
+        rateApplied: it.rateApplied
+      })),
+      totalBill: r.financials?.totalBill ?? 0,
+      cashPaid: r.financials?.cashPaid ?? 0,
+      addedToKhata: r.financials?.amountAddedToKhata ?? 0,
+      notes: r.notes ?? ''
+    }))
+
+    return NextResponse.json({ currentDue: cust.khata?.currentDue ?? 0, statement })
+  }
+
   return NextResponse.json(customer)
 }
 

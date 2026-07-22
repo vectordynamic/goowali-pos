@@ -46,6 +46,13 @@ export const ChangePasswordSchema = z.object({
 })
 
 // ─── Customer ─────────────────────────────────────────────────────────────────
+
+// 24-hour "HH:mm"
+export const timeHHmm = z
+  .string()
+  .trim()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Time must be HH:mm (24-hour)')
+
 export const CustomerCreateSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(200),
   phone: bdPhone,
@@ -54,6 +61,7 @@ export const CustomerCreateSchema = z.object({
   registeredBranch: objectId.optional(),
   paikariConfig: z.object({
     deliveryMethod: z.enum(['Pickup', 'Send']).default('Pickup'),
+    deliveryTime: timeHHmm.default('06:00'),
     dailyRequirementLiters: z.number().min(0).default(0),
     fixedProductRates: z.array(z.object({
       productId: objectId,
@@ -61,7 +69,7 @@ export const CustomerCreateSchema = z.object({
       lockedRate: z.number().min(0),
       dailyQty: z.number().min(0).default(1)
     })).default([])
-  }).default(() => ({ deliveryMethod: 'Pickup' as const, dailyRequirementLiters: 0, fixedProductRates: [] }))
+  }).default(() => ({ deliveryMethod: 'Pickup' as const, deliveryTime: '06:00', dailyRequirementLiters: 0, fixedProductRates: [] }))
 })
 
 // Used by POS quick-create: phone optional, type defaults to Retail
@@ -80,6 +88,7 @@ export const CustomerUpdateSchema = z.object({
   isActive: z.boolean().optional(),
   paikariConfig: z.object({
     deliveryMethod: z.enum(['Pickup', 'Send']).default('Pickup'),
+    deliveryTime: timeHHmm.default('06:00'),
     dailyRequirementLiters: z.number().min(0).default(0),
     fixedProductRates: z.array(z.object({
       productId: objectId,
@@ -88,6 +97,63 @@ export const CustomerUpdateSchema = z.object({
       dailyQty: z.number().min(0).default(1)
     })).default([])
   }).optional()
+})
+
+// ─── Next-day call sheet ──────────────────────────────────────────────────────
+
+// PATCH /api/next-day-orders — manager logs the result of a call
+export const NextDayOrderSchema = z.object({
+  branchId: objectId,
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  customerId: objectId,
+  callStatus: z.enum(['not_called', 'called', 'no_answer', 'skipped']),
+  // Customer reached but confirmed they will NOT take an order next day → the day's log is
+  // marked skipped so the morning dispatch never bills them.
+  noOrder: z.boolean().optional(),
+  confirmedItems: z.array(z.object({
+    productId: objectId,
+    variantId: z.string().min(1),
+    quantity: z.number().min(0)
+  })).optional(),
+  overrideDeliveryTime: timeHHmm.optional(),
+  callNotes: z.string().trim().max(500).optional()
+})
+
+// POST /api/next-day-orders — book a brand-new temporary customer for a date
+export const TempCustomerBookingSchema = z.object({
+  branchId: objectId,
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  phone: bdPhone.optional(),
+  location: z.string().trim().max(200).optional(),
+  deliveryMethod: z.enum(['Pickup', 'Send']).default('Pickup'),
+  deliveryTime: timeHHmm.default('06:00'),
+  items: z.array(z.object({
+    productId: objectId,
+    variantId: z.string().min(1),
+    quantity: z.number().positive('Quantity must be > 0'),
+    rate: z.number().min(0)
+  })).min(1, 'At least one product required')
+})
+
+// POST /api/next-day-orders/request-permanent
+export const RequestPermanentSchema = z.object({
+  customerId: objectId,
+  note: z.string().trim().max(500).optional()
+})
+
+// PATCH /api/customer-approvals — admin approve/reject
+export const ApprovalActionSchema = z.object({
+  customerId: objectId,
+  action: z.enum(['approve', 'reject']),
+  deliveryMethod: z.enum(['Pickup', 'Send']).optional(),
+  deliveryTime: timeHHmm.optional(),
+  fixedProductRates: z.array(z.object({
+    productId: objectId,
+    variantId: z.string().min(1),
+    lockedRate: z.number().min(0),
+    dailyQty: z.number().min(0).default(1)
+  })).optional()
 })
 
 // ─── Product ──────────────────────────────────────────────────────────────────

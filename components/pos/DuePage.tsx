@@ -6,6 +6,7 @@ import { Wallet, RefreshCw, Search, Phone } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
 import { useBranches } from '@/lib/queries/useBranches'
+import DuePdfDownload from './DuePdfDownload'
 
 interface Customer {
   _id: string
@@ -20,6 +21,23 @@ interface Customer {
 interface Branch {
   _id: string
   name: string
+}
+
+interface StatementItem {
+  variantId: string
+  quantity: number
+  rateApplied: number
+}
+
+interface StatementRow {
+  _id: string
+  createdAt: string
+  transactionType: string
+  items: StatementItem[]
+  totalBill: number
+  cashPaid: number
+  addedToKhata: number
+  notes: string
 }
 
 interface Props {
@@ -190,6 +208,17 @@ export default function DuePage({ role, assignedBranches, forceBranchId, lightMo
           <RefreshCw className="w-5 h-5" />
         </button>
 
+        <DuePdfDownload
+          branchId={forceBranchId || branchFilter || assignedBranches[0] || ''}
+          type={activeTab}
+          branchLabel={
+            forceBranchId || branchFilter
+              ? branchName(forceBranchId || branchFilter)
+              : 'সব শাখা'
+          }
+          lightMode={lightMode}
+        />
+
         {customers.length > 0 && (
           <div className="ml-auto flex items-center gap-2">
             <Wallet className="w-5 h-5 text-red-500" />
@@ -241,11 +270,29 @@ function DueRow({
   t: Record<string, string>
 }) {
   const [open, setOpen] = useState(false)
+  // Local due — starts from the customer prop, drops after each partial collection so the row
+  // can stay on the list showing the reduced balance instead of vanishing.
+  const [due, setDue] = useState(customer.khata.currentDue)
   const [amount, setAmount] = useState(String(customer.khata.currentDue))
   const [submitting, setSubmitting] = useState(false)
+  const [statement, setStatement] = useState<StatementRow[] | null>(null)
+  const [loadingStmt, setLoadingStmt] = useState(false)
 
-  const remaining = Math.max(0, customer.khata.currentDue - Number(amount))
-  const isFull = Number(amount) >= customer.khata.currentDue
+  const remaining = Math.max(0, due - Number(amount))
+  const isFull = Number(amount) >= due
+
+  // Fetch the dated khata statement the first time the row is expanded.
+  useEffect(() => {
+    if (!open || statement !== null) return
+    let alive = true
+    setLoadingStmt(true)
+    fetch(`/api/customers/${customer._id}?statement=1`)
+      .then((r) => r.json())
+      .then((d) => { if (alive) setStatement(Array.isArray(d.statement) ? d.statement : []) })
+      .catch(() => { if (alive) setStatement([]) })
+      .finally(() => { if (alive) setLoadingStmt(false) })
+    return () => { alive = false }
+  }, [open, statement, customer._id])
 
   async function handleCollect() {
     const amt = Number(amount)
@@ -261,12 +308,16 @@ function DueRow({
     setSubmitting(false)
 
     if (res.ok) {
-      toast.success(
-        isFull
-          ? `${customer.name}: বাকি শেষ হয়েছে ✓`
-          : `${customer.name}: ${formatCurrency(amt)} আদায়, ${formatCurrency(remaining)} বাকি আছে`
-      )
-      onCollected()
+      if (isFull) {
+        toast.success(`${customer.name}: বাকি শেষ হয়েছে ✓`)
+        onCollected()
+      } else {
+        // Partial — keep the row, drop the balance, refetch the statement to show the collection.
+        toast.success(`${customer.name}: ${formatCurrency(amt)} আদায়, ${formatCurrency(remaining)} বাকি আছে`)
+        setDue(remaining)
+        setAmount(String(remaining))
+        setStatement(null)
+      }
     } else {
       const err = await res.json()
       toast.error(err.error ?? 'আদায় হয়নি')
@@ -293,7 +344,7 @@ function DueRow({
         </div>
 
         <span className="text-lg font-black text-red-500 flex-shrink-0">
-          {formatCurrency(customer.khata.currentDue)}
+          {formatCurrency(due)}
         </span>
 
         <button
@@ -308,7 +359,45 @@ function DueRow({
 
       {/* Inline collect form — no modal */}
       {open && (
-        <div className={`px-4 pb-4 pt-1 space-y-3 ${t.formWrap}`}>
+        <div className={`px-4 pb-4 pt-3 space-y-3 ${t.formWrap}`}>
+          {/* Dated khata statement */}
+          <div>
+            <p className={`text-sm font-bold mb-1.5 ${t.label}`}>বাকির বিবরণ (তারিখ অনুযায়ী)</p>
+            {loadingStmt ? (
+              <p className={`text-sm py-2 ${t.loadingText}`}>হিসাব লোড হচ্ছে...</p>
+            ) : !statement || statement.length === 0 ? (
+              <p className={`text-sm py-2 ${t.emptySub}`}>বিস্তারিত হিসাব নেই</p>
+            ) : (
+              <div className="space-y-1">
+                {(() => {
+                  let bal = 0
+                  return statement.map((row) => {
+                    const isCollection = row.transactionType === 'Due Collection'
+                    bal += isCollection ? -row.cashPaid : row.addedToKhata
+                    const date = new Date(row.createdAt).toLocaleDateString('bn-BD', {
+                      day: '2-digit', month: '2-digit', year: '2-digit',
+                    })
+                    const itemText = row.items.length > 0
+                      ? row.items.map((it) => `${it.variantId} ×${it.quantity}`).join(', ')
+                      : (isCollection ? 'টাকা আদায়' : (row.notes || '—'))
+                    return (
+                      <div key={row._id} className="flex items-center gap-2 text-sm bg-white/60 rounded-lg px-3 py-2">
+                        <span className={`w-14 shrink-0 font-bold ${t.phoneText}`}>{date}</span>
+                        <span className={`flex-1 min-w-0 truncate ${t.nameText}`}>{itemText}</span>
+                        <span className={`shrink-0 font-black ${isCollection ? 'text-green-600' : 'text-red-500'}`}>
+                          {isCollection ? '−' : '+'}{formatCurrency(isCollection ? row.cashPaid : row.addedToKhata)}
+                        </span>
+                        <span className={`w-20 text-right shrink-0 text-xs font-bold ${t.phoneText}`}>
+                          বাকি {formatCurrency(Math.max(0, bal))}
+                        </span>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            )}
+          </div>
+
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <label className={`text-sm font-bold block mb-1.5 ${t.label}`}>
@@ -320,7 +409,7 @@ function DueRow({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min={1}
-                max={customer.khata.currentDue}
+                max={due}
                 autoFocus
               />
             </div>
@@ -333,12 +422,12 @@ function DueRow({
             </button>
           </div>
 
-          {Number(amount) > 0 && Number(amount) < customer.khata.currentDue && (
+          {Number(amount) > 0 && Number(amount) < due && (
             <p className={`text-base font-bold rounded-xl px-4 py-2.5 border ${t.partialMsg}`}>
               আংশিক — {formatCurrency(remaining)} এখনো বাকি থাকবে
             </p>
           )}
-          {Number(amount) >= customer.khata.currentDue && Number(amount) > 0 && (
+          {Number(amount) >= due && Number(amount) > 0 && (
             <p className={`text-base font-bold rounded-xl px-4 py-2.5 border ${t.fullMsg}`}>
               ✓ সম্পূর্ণ — বাকি শেষ হয়ে যাবে
             </p>

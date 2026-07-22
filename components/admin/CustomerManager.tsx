@@ -14,6 +14,13 @@ interface Branch {
   name: string
 }
 
+interface PaikariConfig {
+  deliveryMethod?: 'Pickup' | 'Send'
+  deliveryTime?: string
+  dailyRequirementLiters?: number
+  fixedProductRates?: Array<{ productId: string; variantId: string; lockedRate: number; dailyQty: number }>
+}
+
 interface Customer {
   _id: string
   name: string
@@ -21,6 +28,7 @@ interface Customer {
   location?: string
   customerType: 'Retail' | 'Paikari'
   registeredBranch?: string
+  paikariConfig?: PaikariConfig
   khata: { currentDue: number; creditLimit: number; lastPaymentDate?: string }
   createdAt: string
 }
@@ -350,6 +358,10 @@ function CustomerModal({
   const [registeredBranch, setRegisteredBranch] = useState(
     customer?.registeredBranch ?? autoSelectedBranch
   )
+  const [deliveryMethod, setDeliveryMethod] = useState<'Pickup' | 'Send'>(
+    customer?.paikariConfig?.deliveryMethod ?? 'Pickup'
+  )
+  const [deliveryTime, setDeliveryTime] = useState(customer?.paikariConfig?.deliveryTime ?? '06:00')
   const [phoneError, setPhoneError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -376,12 +388,26 @@ function CustomerModal({
     }
 
     setSubmitting(true)
-    const payload = {
+    const effectiveType = role === 'MANAGER' ? 'Retail' : customerType
+    const payload: Record<string, unknown> = {
       name,
       phone,
       location,
-      customerType: role === 'MANAGER' ? 'Retail' : customerType,
+      customerType: effectiveType,
       registeredBranch: branch
+    }
+
+    // For Paikari, persist delivery method/time. Merge into the existing config so the standing
+    // order (fixedProductRates, configured on the Regular Orders page) is never wiped — the
+    // server $sets the whole paikariConfig object.
+    if (effectiveType === 'Paikari') {
+      const existing = customer?.paikariConfig
+      payload.paikariConfig = {
+        deliveryMethod,
+        deliveryTime,
+        dailyRequirementLiters: existing?.dailyRequirementLiters ?? 0,
+        fixedProductRates: existing?.fixedProductRates ?? []
+      }
     }
 
     const res = customer
@@ -477,6 +503,31 @@ function CustomerModal({
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">Type</label>
               <div className="input-base text-slate-500 cursor-not-allowed">Retail</div>
+            </div>
+          )}
+
+          {role !== 'MANAGER' && customerType === 'Paikari' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1.5">Delivery Method</label>
+                <select
+                  className="input-base"
+                  value={deliveryMethod}
+                  onChange={(e) => setDeliveryMethod(e.target.value as 'Pickup' | 'Send')}
+                >
+                  <option value="Pickup">Pickup</option>
+                  <option value="Send">Send</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1.5">Delivery Time</label>
+                <input
+                  type="time"
+                  className="input-base"
+                  value={deliveryTime}
+                  onChange={(e) => setDeliveryTime(e.target.value)}
+                />
+              </div>
             </div>
           )}
 

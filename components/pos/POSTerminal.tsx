@@ -99,6 +99,8 @@ export default function POSTerminal({ branchId }: Props) {
   // ── Day status gate — shared cache with ZReport (same branch+date) ──
   type DayStatus = 'pending' | 'open' | 'locked' | null
   const [startingDay, setStartingDay] = useState(false)
+  // Set when Start Day is refused because an earlier day is still Open and must be closed first.
+  const [blockedByOpenDate, setBlockedByOpenDate] = useState<string | null>(null)
 
   const closingKey = ['daily-closing', branchId, todayDate]
   const { data: closingData, isLoading: closingLoading, isError: closingErrored } = useDailyClosing(branchId, todayDate)
@@ -119,6 +121,7 @@ export default function POSTerminal({ branchId }: Props) {
         body: JSON.stringify({ branchId, date: todayDate, action: 'startDay' }),
       })
       if (res.ok) {
+        setBlockedByOpenDate(null)
         await queryClient.invalidateQueries({ queryKey: closingKey })
         toast.success('দিন শুরু হয়েছে! বিক্রি শুরু করুন ✓')
       } else {
@@ -127,6 +130,8 @@ export default function POSTerminal({ branchId }: Props) {
         if (res.status === 409) {
           await queryClient.invalidateQueries({ queryKey: closingKey })
         } else {
+          // Blocked by an unclosed earlier day — surface a direct path to close it.
+          if (err.blockedByOpenDate) setBlockedByOpenDate(err.blockedByOpenDate)
           toast.error(err.error ?? 'দিন শুরু করা যায়নি')
         }
       }
@@ -393,10 +398,25 @@ export default function POSTerminal({ branchId }: Props) {
               <p className="text-3xl font-black text-blue-700">{formatCurrency(openingCash)}</p>
             </div>
           )}
-          <p className="text-gray-500 text-sm">
-            বিক্রি শুরু করতে নিচের বাটনে চাপুন।<br />
-            দিন শুরু না করলে কোনো বিক্রি করা যাবে না।
-          </p>
+          {blockedByOpenDate ? (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl px-6 py-4 text-left">
+              <p className="text-base font-black text-amber-800">⚠️ আগের দিন বন্ধ হয়নি</p>
+              <p className="text-sm text-amber-700 mt-1">
+                {blockedByOpenDate} তারিখের হিসাব এখনো খোলা। নতুন দিন শুরু করার আগে ওই দিনের স্টক গণনা করে "দিন শেষ করুন"।
+              </p>
+              <a
+                href={`/${branchId}/z-report`}
+                className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold rounded-xl transition-colors"
+              >
+                আগের দিন বন্ধ করুন →
+              </a>
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm">
+              বিক্রি শুরু করতে নিচের বাটনে চাপুন।<br />
+              দিন শুরু না করলে কোনো বিক্রি করা যাবে না।
+            </p>
+          )}
           <button
             onClick={handleStartDay}
             disabled={startingDay}
