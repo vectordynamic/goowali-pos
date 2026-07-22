@@ -2,15 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
-import { assertBranchAccess, branchDenied } from '@/lib/utils'
+import { assertBranchAccess, branchDenied, today } from '@/lib/utils'
 import { validate, NextDayOrderSchema, TempCustomerBookingSchema } from '@/lib/validators'
 import type { Role } from '@/types'
 
 function tomorrowStr() {
-  const d = new Date()
+  const t = today()
+  const d = new Date(t + 'T00:00:00')
   d.setDate(d.getDate() + 1)
-  return d.toISOString().split('T')[0]
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' })
 }
+
 
 // Permanent Paikari customers eligible for the standing call sheet: has at least one fixed
 // rate configured and is not a one-time / pending / rejected booking. Existing customers

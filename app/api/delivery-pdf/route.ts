@@ -2,12 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
-import { assertBranchAccess, branchDenied } from '@/lib/utils'
+import { assertBranchAccess, branchDenied, today } from '@/lib/utils'
 import type { Role } from '@/types'
-
-function todayStr() {
-  return new Date().toISOString().split('T')[0]
-}
 
 // GET /api/delivery-pdf?branchId=&date=YYYY-MM-DD
 // Today's pending regular-order deliveries with resolved product names, location, time and
@@ -20,7 +16,8 @@ export async function GET(req: NextRequest) {
   const { role, assignedBranches } = session.user as { role: Role; assignedBranches: string[] }
   const sp = req.nextUrl.searchParams
   const branchId = sp.get('branchId')
-  const date = sp.get('date') ?? todayStr()
+  const date = sp.get('date') ?? today()
+
 
   if (!branchId) return NextResponse.json({ error: 'branchId required' }, { status: 400 })
   if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
@@ -83,7 +80,9 @@ export async function GET(req: NextRequest) {
       location: cust.location ?? '',
       time,
       items,
-      totalDue: cust.khata?.currentDue ?? 0
+      totalDue: cust.khata?.currentDue ?? 0,
+      // Was this delivery confirmed on last night's call, or is it just the standing order?
+      confirmed: log.callStatus === 'called'
     }
   })
 

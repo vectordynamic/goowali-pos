@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
-import { assertBranchAccess, branchDenied, generateInvoiceId } from '@/lib/utils'
+import { assertBranchAccess, branchDenied, generateInvoiceId, today } from '@/lib/utils'
 import { updateDailySummary } from '@/lib/update-daily-summary'
 import type { Role } from '@/types'
-
-function todayStr() {
-  return new Date().toISOString().split('T')[0]
-}
 
 // GET /api/daily-orders?branchId=&date=YYYY-MM-DD
 // Returns today's regular order log for the branch.
@@ -21,7 +17,8 @@ export async function GET(req: NextRequest) {
   const { role, assignedBranches } = session.user as { role: Role; assignedBranches: string[] }
   const sp = req.nextUrl.searchParams
   const branchId = sp.get('branchId')
-  const date = sp.get('date') ?? todayStr()
+  const date = sp.get('date') ?? today()
+
 
   if (!branchId) return NextResponse.json({ error: 'branchId required' }, { status: 400 })
   if (!assertBranchAccess(role, assignedBranches, branchId)) return branchDenied()
@@ -169,7 +166,7 @@ export async function PATCH(req: NextRequest) {
   const { default: DailyOrderLog } = await import('@/models/DailyOrderLog')
   const { default: Customer } = await import('@/models/Customer')
 
-  const effectiveDate = date ?? todayStr()
+  const effectiveDate = date ?? today()
   const log = await DailyOrderLog.findOne({ branchId, date: effectiveDate, customerId })
   if (!log) return NextResponse.json({ error: 'Order log not found' }, { status: 404 })
 

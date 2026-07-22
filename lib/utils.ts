@@ -86,5 +86,6 @@ export function formatCurrency(amount: number): string {
 }
 
 export function today(): string {
-  return new Date().toISOString().split('T')[0]
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' })
 }
+

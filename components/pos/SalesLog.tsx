@@ -37,7 +37,7 @@ interface Props {
 }
 
 function todayDate() {
-  return new Date().toISOString().split('T')[0]
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' })
 }
 
 const SALE_TYPES = ['Cash Sale', 'Credit Sale', 'Partial Payment']

@@ -20,6 +20,7 @@ interface DeliveryOrder {
   time: string
   items: string[]
   totalDue: number
+  confirmed: boolean
 }
 
 interface Props {
@@ -102,6 +103,9 @@ function printDocument(title: string, orientation: 'portrait' | 'landscape', bod
   table.run td.num { width: 22px; text-align: center; }
   table.run td.qty { min-width: 120px; }
   table.run td.time { width: 44px; text-align: center; }
+  table.run td.conf { width: 60px; text-align: center; font-weight: 800; }
+  table.run td.conf.yes { color: #15803d; }
+  table.run td.conf.no { color: #b91c1c; }
   table.run td.due { width: 68px; text-align: right; font-weight: 700; color: #b91c1c; }
   table.run td.tick { width: 48px; }
   table.run td.collect { width: 80px; }
@@ -187,19 +191,22 @@ function deliverySheetBody(orders: DeliveryOrder[], branchLabel: string): string
     <td class="qty">${o.items.map((it) => esc(it)).join('<br/>')}</td>
     <td>${esc(o.location)}</td>
     <td class="time">${esc(o.time)}</td>
+    <td class="conf ${o.confirmed ? 'yes' : 'no'}">${o.confirmed ? '✅ হ্যাঁ' : '✗ না'}</td>
     <td class="due">${o.totalDue > 0 ? esc(formatCurrency(o.totalDue)) : ''}</td>
     <td class="tick"></td>
     <td class="collect"></td>
   </tr>`).join('')
 
+  const confirmedCount = orders.filter((o) => o.confirmed).length
   const table = `<table class="run">
     <thead><tr>
       <th class="num">#</th><th>নাম</th><th>পরিমাণ</th><th>এলাকা</th>
-      <th class="time">সময়</th><th class="due">মোট বাকি</th><th class="tick">ডেলিভারি ✅</th><th class="collect">আদায় (৳)</th>
+      <th class="time">সময়</th><th class="conf">কল কনফার্ম</th><th class="due">মোট বাকি</th><th class="tick">ডেলিভারি ✅</th><th class="collect">আদায় (৳)</th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr>
       <td colspan="5">মোট</td>
+      <td class="conf yes">${esc(confirmedCount)}/${esc(orders.length)}</td>
       <td class="due">${esc(formatCurrency(grandTotal))}</td>
       <td></td><td></td>
     </tr></tfoot>

@@ -54,7 +54,7 @@ interface OrderLog {
 interface ProductLite {
   _id: string
   name: string
-  variants: Array<{ variantId: string; sizeLabel?: string }>
+  variants: Array<{ variantId: string; sizeLabel?: string; portionSize?: number }>
 }
 
 interface Props {
@@ -62,9 +62,10 @@ interface Props {
 }
 
 function tomorrowStr() {
-  const d = new Date()
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' })
+  const d = new Date(today + 'T00:00:00')
   d.setDate(d.getDate() + 1)
-  return d.toISOString().split('T')[0]
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' })
 }
 
 export default function NextDayOrders({ branchId }: Props) {
@@ -216,6 +217,24 @@ export default function NextDayOrders({ branchId }: Props) {
   const doneCount = logs.filter((l) => !l.isTemporary && l.callStatus !== 'not_called').length
   const pendingCount = logs.filter((l) => !l.isTemporary && l.callStatus === 'not_called').length
 
+  // ── Tomorrow's summary ────────────────────────────────────────────────────────
+  // portionSize converts a variant to real weight/volume: 1kg→1, 500gm→0.5. Falls back to 1
+  // for piece-counted products so they still add as whole units.
+  function portionOf(productId: string, variantId: string) {
+    const v = products.find((p) => p._id === productId)?.variants.find((x) => x.variantId === variantId)
+    return v?.portionSize && v.portionSize > 0 ? v.portionSize : 1
+  }
+  function logVolume(log: OrderLog) {
+    const rates = log.customerId.paikariConfig?.fixedProductRates ?? []
+    return rates.reduce((s, r) => s + defaultQty(log, r) * portionOf(r.productId, r.variantId), 0)
+  }
+  // Confirmed = reached them and they're taking an order (permanent confirms + temp bookings).
+  const confirmedLogs = logs.filter((l) => l.callStatus === 'called' && l.status !== 'skipped')
+  const declinedCount = logs.filter((l) => l.callStatus === 'called' && l.status === 'skipped').length
+  const noAnswerCount = logs.filter((l) => l.callStatus === 'no_answer').length
+  const confirmedVolume = confirmedLogs.reduce((s, l) => s + logVolume(l), 0)
+  const kg = (n: number) => `${Math.round(n * 100) / 100} কেজি`
+
   return (
     <div>
       {/* Header */}
@@ -252,6 +271,28 @@ export default function NextDayOrders({ branchId }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Tomorrow-at-a-glance summary */}
+      {!isLoading && logs.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+          <div className="lcard px-4 py-3 border-l-4 border-green-400">
+            <p className="text-xs font-bold text-gray-400">✅ অর্ডার কনফার্ম</p>
+            <p className="text-2xl font-black text-green-600">{confirmedLogs.length} জন</p>
+          </div>
+          <div className="lcard px-4 py-3 border-l-4 border-blue-400">
+            <p className="text-xs font-bold text-gray-400">🥛 মোট দুধ (কাল)</p>
+            <p className="text-2xl font-black text-blue-600">{kg(confirmedVolume)}</p>
+          </div>
+          <div className="lcard px-4 py-3 border-l-4 border-red-400">
+            <p className="text-xs font-bold text-gray-400">❌ কাল নেবে না</p>
+            <p className="text-2xl font-black text-red-500">{declinedCount} জন</p>
+          </div>
+          <div className="lcard px-4 py-3 border-l-4 border-amber-400">
+            <p className="text-xs font-bold text-gray-400">⏳ বাকি / রিসিভ করেনি</p>
+            <p className="text-2xl font-black text-amber-600">{pendingCount + noAnswerCount} জন</p>
+          </div>
+        </div>
+      )}
 
       {isLoading && <div className="text-base text-gray-400 py-6">লোড হচ্ছে...</div>}
       {isError && <div className="text-base text-red-500 py-6">কালকের অর্ডার লোড হয়নি</div>}
