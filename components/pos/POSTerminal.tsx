@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { Plus, Minus, Trash2, Search, X, CheckCircle2, Lock, Play, Calendar } from 'lucide-react'
 import { formatCurrency, today } from '@/lib/utils'
 import { useProducts } from '@/lib/queries/useProducts'
-import { useDailyClosing } from '@/lib/queries/useDailyClosing'
+import { useDailyClosing, useActiveClosingDate } from '@/lib/queries/useDailyClosing'
 
 interface BranchDetail {
   branchId: string
@@ -74,7 +74,11 @@ interface Props {
 
 export default function POSTerminal({ branchId }: Props) {
   const queryClient = useQueryClient()
-  const todayDate = today()
+  // calendarToday is only used for starting a brand-new day.
+  // todayDate is the BUSINESS day — the earliest still-Open day if one exists, else calendar today.
+  const calendarToday = today()
+  const { data: resolvedDate } = useActiveClosingDate(branchId)
+  const todayDate = resolvedDate ?? calendarToday
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [search, setSearch] = useState('')
@@ -118,11 +122,12 @@ export default function POSTerminal({ branchId }: Props) {
       const res = await fetch('/api/daily-closing', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branchId, date: todayDate, action: 'startDay' }),
+        body: JSON.stringify({ branchId, date: calendarToday, action: 'startDay' }),
       })
       if (res.ok) {
         setBlockedByOpenDate(null)
         await queryClient.invalidateQueries({ queryKey: closingKey })
+        await queryClient.invalidateQueries({ queryKey: ['daily-closing-active', branchId] })
         toast.success('দিন শুরু হয়েছে! বিক্রি শুরু করুন ✓')
       } else {
         const err = await res.json()

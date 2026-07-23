@@ -6,6 +6,7 @@ import { RefreshCw, Receipt, User, ChevronDown } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
 import DailyOrders from './DailyOrders'
+import { useActiveClosingDate } from '@/lib/queries/useDailyClosing'
 
 interface TransactionItem {
   productId: string
@@ -68,6 +69,16 @@ export default function SalesLog({ branchId, role }: Props) {
   const [typeFilter, setTypeFilter] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
+  // Sync to active business day on first load (handles midnight rollover before day is closed)
+  const { data: activeDate } = useActiveClosingDate(branchId)
+  useEffect(() => {
+    if (activeDate) setDate((prev) => {
+      // Only auto-sync if user hasn't manually changed the date
+      if (prev === todayDate()) return activeDate
+      return prev
+    })
+  }, [activeDate])
+
   const load = useCallback(() => {
     setLoading(true)
     const params = new URLSearchParams({ branchId, date })
@@ -94,7 +105,7 @@ export default function SalesLog({ branchId, role }: Props) {
     return { saleCount, cashTotal, khataTotal, total, procurementTotal }
   }, [transactions])
 
-  const isToday = date === todayDate()
+  const isToday = date === (activeDate ?? todayDate())
 
   return (
     <div className="space-y-4">

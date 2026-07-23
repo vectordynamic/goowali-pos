@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useProducts } from '@/lib/queries/useProducts'
+import { useActiveClosingDate } from '@/lib/queries/useDailyClosing'
 
 interface FixedRate {
   productId: string
@@ -72,6 +73,22 @@ export default function NextDayOrders({ branchId }: Props) {
   const queryClient = useQueryClient()
   const [date, setDate] = useState(tomorrowStr)
   const ordersKey = ['next-day-orders', branchId, date]
+
+  // When the active business date resolves (e.g. midnight rollover before day is closed),
+  // update the default date to (businessDay + 1) so the call sheet stays correct.
+  const { data: activeDate } = useActiveClosingDate(branchId)
+  useEffect(() => {
+    if (activeDate) {
+      const d = new Date(activeDate + 'T00:00:00')
+      d.setDate(d.getDate() + 1)
+      const businessTomorrow = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' })
+      setDate((prev) => {
+        // Only auto-sync if user hasn't manually navigated to a different date
+        if (prev === tomorrowStr()) return businessTomorrow
+        return prev
+      })
+    }
+  }, [activeDate])
 
   const [acting, setActing] = useState<Record<string, boolean>>({})
   const [editing, setEditing] = useState<Record<string, boolean>>({})
