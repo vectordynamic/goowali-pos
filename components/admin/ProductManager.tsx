@@ -112,10 +112,10 @@ export default function ProductManager({ role, assignedBranches }: Props) {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-500">{products.length} products</span>
+          <span className="text-sm text-slate-400 font-medium">{products.length} products</span>
           <button
             onClick={load}
             className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded transition-colors"
@@ -124,9 +124,9 @@ export default function ProductManager({ role, assignedBranches }: Props) {
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
-        <button onClick={() => setModal('create')} className="btn-primary flex items-center gap-1.5">
-          <Plus className="w-3.5 h-3.5" />
-          Add Product
+        <button onClick={() => setModal('create')} className="btn-primary flex items-center gap-1.5 self-start sm:self-auto">
+          <Plus className="w-4 h-4" />
+          <span>Add Product</span>
         </button>
       </div>
 
@@ -143,7 +143,7 @@ export default function ProductManager({ role, assignedBranches }: Props) {
           {products.map((product) => (
             <div key={product._id}>
               <div
-                className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-800/30 transition-colors"
+                className="flex items-center gap-3 px-3 sm:px-4 py-3 cursor-pointer hover:bg-slate-800/30 transition-colors min-h-[44px]"
                 onClick={() => setExpanded(expanded === product._id ? null : product._id)}
               >
                 {expanded === product._id
@@ -154,13 +154,13 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                   <Package className="w-3.5 h-3.5 text-slate-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium text-slate-100">{product.name}</p>
                     <span className="text-xs font-mono bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded flex-shrink-0">
                       {product.productCode}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 truncate">
                     {product.unitType}
                     {product.isOpenLoose && ' · Loose'}
                     {product.isPooled && <span className="ml-1 text-amber-400 font-semibold">· Pool</span>}
@@ -172,30 +172,30 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                 <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => setModal(product)}
-                    className="p-1.5 text-slate-500 hover:text-slate-100 hover:bg-slate-700 rounded transition-colors"
+                    className="p-2 text-slate-500 hover:text-slate-100 hover:bg-slate-700 rounded transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
                     title="Edit"
                   >
-                    <Pencil className="w-3.5 h-3.5" />
+                    <Pencil className="w-4 h-4" />
                   </button>
                   {role === 'SUPER_ADMIN' && (
                     <button
                       onClick={() => setDeleteTarget(product)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-900/20 rounded transition-colors"
+                      className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-900/20 rounded transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
                       title="Delete"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   )}
                 </div>
               </div>
 
               {expanded === product._id && (
-                <div className="px-4 pb-4 bg-slate-900/30 border-t border-slate-800/50">
+                <div className="px-3 sm:px-4 pb-4 bg-slate-900/30 border-t border-slate-800/50">
                   <div className="flex items-center justify-between mt-3 mb-2">
                     <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Variants & Branch Stock</span>
                     <button
                       onClick={() => setVariantModal({ productId: product._id, isPooled: product.isPooled })}
-                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors p-1"
                     >
                       + Add variant
                     </button>
@@ -208,7 +208,7 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                         <span className="text-xs font-medium text-amber-400 uppercase tracking-wider">Pool Tank (Shared Stock)</span>
                         <button
                           onClick={() => setPooledStockModal(product._id)}
-                          className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                          className="text-xs text-amber-400 hover:text-amber-300 transition-colors p-1"
                         >
                           + Set pool stock
                         </button>
@@ -216,26 +216,28 @@ export default function ProductManager({ role, assignedBranches }: Props) {
                       {product.pooledStock.length === 0 ? (
                         <p className="text-xs text-slate-600 italic">No pool stock set for any branch</p>
                       ) : (
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="text-slate-500 border-b border-slate-800">
-                              <th className="text-left py-1 font-medium">Branch</th>
-                              <th className="text-right py-1 font-medium">Pool Stock</th>
-                              <th className="text-right py-1 font-medium">Buy ৳/unit</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {product.pooledStock.map((ps) => (
-                              <tr key={String(ps.branchId)} className="border-b border-slate-800/40">
-                                <td className="py-1 text-slate-300">{branchName(String(ps.branchId))}</td>
-                                <td className="py-1 text-right text-amber-400 font-bold">
-                                  {ps.stockQty} {product.unitType === 'Liquid' ? 'L' : 'kg'}
-                                </td>
-                                <td className="py-1 text-right text-rose-400">৳{ps.buyingPrice}</td>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs min-w-[300px]">
+                            <thead>
+                              <tr className="text-slate-500 border-b border-slate-800">
+                                <th className="text-left py-1 font-medium">Branch</th>
+                                <th className="text-right py-1 font-medium">Pool Stock</th>
+                                <th className="text-right py-1 font-medium">Buy ৳/unit</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {product.pooledStock.map((ps) => (
+                                <tr key={String(ps.branchId)} className="border-b border-slate-800/40">
+                                  <td className="py-1 text-slate-300">{branchName(String(ps.branchId))}</td>
+                                  <td className="py-1 text-right text-amber-400 font-bold">
+                                    {ps.stockQty} {product.unitType === 'Liquid' ? 'L' : 'kg'}
+                                  </td>
+                                  <td className="py-1 text-right text-rose-400">৳{ps.buyingPrice}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </div>
                   )}

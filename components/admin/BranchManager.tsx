@@ -56,9 +56,9 @@ export default function BranchManager() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-500">{branches.length} branches</span>
+          <span className="text-sm text-slate-400 font-medium">{branches.length} branches</span>
           <button
             onClick={load}
             className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded transition-colors"
@@ -69,10 +69,10 @@ export default function BranchManager() {
         </div>
         <button
           onClick={() => setModal('create')}
-          className="btn-primary flex items-center gap-1.5"
+          className="btn-primary flex items-center gap-1.5 self-start sm:self-auto"
         >
-          <Plus className="w-3.5 h-3.5" />
-          New Branch
+          <Plus className="w-4 h-4" />
+          <span>Add Branch</span>
         </button>
       </div>
 
@@ -85,7 +85,7 @@ export default function BranchManager() {
           <p className="text-slate-600 text-sm mt-1">Create your first branch to get started</p>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {branches.map((branch) => (
             <div key={branch._id} className="card p-4">
               <div className="flex items-start justify-between mb-3">

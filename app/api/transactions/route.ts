@@ -49,6 +49,9 @@ export async function GET(req: NextRequest) {
   const transactions = await Transaction.find(filter)
     .populate('customerId', 'name phone')
     .populate('recordedBy', 'name')
+    .populate('voidedBy', 'name')
+    .populate('correctedFromId', 'invoiceId transactionType financials createdAt')
+    .populate('correctedById', 'invoiceId transactionType createdAt')
     .sort({ createdAt: -1 })
     .limit(1000)
     .lean()
@@ -80,7 +83,14 @@ export async function POST(req: NextRequest) {
   await dbConnect()
 
   // ── Day-status gate: block sales if day not Open ─────────────────────────────────
-  const dayClosing = await DailyClosing.findOne({ branchId, date: today() }).lean() as any
+  let dayClosing = await DailyClosing.findOne({ branchId, status: 'Open', date: { $lte: today() } })
+    .sort({ date: 1 })
+    .lean() as any
+
+  if (!dayClosing) {
+    dayClosing = await DailyClosing.findOne({ branchId, date: today() }).lean() as any
+  }
+
   if (!dayClosing || dayClosing.status === 'Pending') {
     return NextResponse.json(
       { error: 'আজকের হিসাব শুরু হয়নি। বিক্রি শুরু করতে প্রথমে "দিন শুরু করুন" বাটন চাপুন।' },
@@ -230,7 +240,7 @@ export async function POST(req: NextRequest) {
   })
 
   // Update pre-computed daily summary (non-blocking)
-  updateDailySummary(branchId, today()).catch(() => {})
+  updateDailySummary(branchId, dayClosing.date).catch(() => {})
 
   const result = transaction.toObject()
   if (role === 'MANAGER') {

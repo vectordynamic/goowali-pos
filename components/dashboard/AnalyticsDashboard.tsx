@@ -217,9 +217,10 @@ export default function AnalyticsDashboard({ role }: Props) {
       ) : (
         <>
           {/* ── Row 1: Revenue & Profit ── */}
+          {/* ── Row 1: Revenue & Profit ── */}
           <div>
-            <p className="text-xs text-slate-600 uppercase tracking-wider font-medium mb-3">Sales Performance</p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Sales Performance</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <StatCard
                 label="Total Sales Revenue"
                 value={formatCurrency(s?.salesRevenue ?? 0)}
@@ -253,8 +254,8 @@ export default function AnalyticsDashboard({ role }: Props) {
 
           {/* ── Row 2: Stock & Due ── */}
           <div>
-            <p className="text-xs text-slate-600 uppercase tracking-wider font-medium mb-3">Stock & Due</p>
-            <div className="grid grid-cols-2 gap-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Stock & Due</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <StatCard
                 label="Litres Sold / Procured"
                 value={`${(s?.liquidSold ?? 0).toFixed(1)} L sold`}
@@ -272,83 +273,93 @@ export default function AnalyticsDashboard({ role }: Props) {
 
           {/* ── Trend Chart ── */}
           {data && data.trend.length > 0 && (
-            <div className="card p-4">
+            <div className="card p-4 overflow-hidden">
               <p className="text-sm font-medium text-slate-100 mb-4">Revenue & Profit Trend</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={data.trend}>
-                  <defs>
-                    <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#34d399" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="profGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#818cf8" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2230" />
-                  <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false}
-                    tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip
-                    contentStyle={{ background: '#16191f', border: '1px solid #334155', borderRadius: '8px' }}
-                    labelStyle={{ color: '#94a3b8' }}
-                    formatter={(v) => formatCurrency(Number(v))}
-                  />
-                  <Area type="monotone" dataKey="salesRevenue" stroke="#34d399" strokeWidth={2} fill="url(#revGrad)" name="Revenue" />
-                  <Area type="monotone" dataKey="netProfit" stroke="#818cf8" strokeWidth={2} fill="url(#profGrad)" name="Net Profit" />
-                </AreaChart>
-              </ResponsiveContainer>
+              <div className="w-full overflow-x-auto no-scrollbar">
+                <div className="min-w-[480px]">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={data.trend}>
+                      <defs>
+                        <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#34d399" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="profGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#818cf8" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e2230" />
+                      <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false}
+                        tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip
+                        contentStyle={{ background: '#16191f', border: '1px solid #334155', borderRadius: '8px' }}
+                        labelStyle={{ color: '#94a3b8' }}
+                        formatter={(v) => formatCurrency(Number(v))}
+                      />
+                      <Area type="monotone" dataKey="salesRevenue" stroke="#34d399" strokeWidth={2} fill="url(#revGrad)" name="Revenue" />
+                      <Area type="monotone" dataKey="netProfit" stroke="#818cf8" strokeWidth={2} fill="url(#profGrad)" name="Net Profit" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
           )}
 
           {/* ── Branch Comparison ── */}
           {role === 'SUPER_ADMIN' && data && data.byBranch.length > 1 && !selectedBranch && (
-            <div className="card p-4">
+            <div className="card p-4 overflow-hidden">
               <p className="text-sm font-medium text-slate-100 mb-4">Branch Comparison</p>
-              <ResponsiveContainer width="100%" height={Math.max(160, data.byBranch.length * 55)}>
-                <BarChart data={data.byBranch} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2230" horizontal={false} />
-                  <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false}
-                    tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
-                  <YAxis type="category" dataKey="branchName" tick={{ fill: '#94a3b8', fontSize: 12 }}
-                    tickLine={false} axisLine={false} width={110} />
-                  <Tooltip
-                    contentStyle={{ background: '#16191f', border: '1px solid #334155', borderRadius: '8px' }}
-                    formatter={(v) => formatCurrency(Number(v))}
-                  />
-                  <Legend />
-                  <Bar dataKey="salesRevenue" fill="#34d399" name="Revenue" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="netProfit" fill="#818cf8" name="Net Profit" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="w-full overflow-x-auto no-scrollbar">
+                <div className="min-w-[480px]">
+                  <ResponsiveContainer width="100%" height={Math.max(160, data.byBranch.length * 55)}>
+                    <BarChart data={data.byBranch} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e2230" horizontal={false} />
+                      <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false}
+                        tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
+                      <YAxis type="category" dataKey="branchName" tick={{ fill: '#94a3b8', fontSize: 12 }}
+                        tickLine={false} axisLine={false} width={110} />
+                      <Tooltip
+                        contentStyle={{ background: '#16191f', border: '1px solid #334155', borderRadius: '8px' }}
+                        formatter={(v) => formatCurrency(Number(v))}
+                      />
+                      <Legend />
+                      <Bar dataKey="salesRevenue" fill="#34d399" name="Revenue" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="netProfit" fill="#818cf8" name="Net Profit" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
 
-              <table className="w-full mt-4 text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800">
-                    <th className="text-left py-2 text-xs text-slate-500 font-medium">Branch</th>
-                    <th className="text-right py-2 text-xs text-slate-500 font-medium">Revenue</th>
-                    <th className="text-right py-2 text-xs text-slate-500 font-medium">Gross Profit</th>
-                    <th className="text-right py-2 text-xs text-slate-500 font-medium">Net Profit</th>
-                    <th className="text-right py-2 text-xs text-slate-500 font-medium">Procurement</th>
-                    <th className="text-right py-2 text-xs text-slate-500 font-medium">Txns</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.byBranch.map((b) => (
-                    <tr key={b.branchId} className="border-b border-slate-800/50">
-                      <td className="py-2 text-slate-300">{b.branchName}</td>
-                      <td className="py-2 text-right text-emerald-400">{formatCurrency(b.salesRevenue)}</td>
-                      <td className="py-2 text-right text-blue-400">{formatCurrency(b.grossProfit)}</td>
-                      <td className={`py-2 text-right font-bold ${b.netProfit >= 0 ? 'text-violet-400' : 'text-red-400'}`}>
-                        {formatCurrency(b.netProfit)}
-                      </td>
-                      <td className="py-2 text-right text-amber-400">{formatCurrency(b.procurementCost)}</td>
-                      <td className="py-2 text-right text-slate-400">{b.txCount}</td>
+              <div className="overflow-x-auto mt-4">
+                <table className="w-full text-sm min-w-[500px]">
+                  <thead>
+                    <tr className="border-b border-slate-800">
+                      <th className="text-left py-2 text-xs text-slate-500 font-medium whitespace-nowrap">Branch</th>
+                      <th className="text-right py-2 text-xs text-slate-500 font-medium whitespace-nowrap">Revenue</th>
+                      <th className="text-right py-2 text-xs text-slate-500 font-medium whitespace-nowrap">Gross Profit</th>
+                      <th className="text-right py-2 text-xs text-slate-500 font-medium whitespace-nowrap">Net Profit</th>
+                      <th className="text-right py-2 text-xs text-slate-500 font-medium whitespace-nowrap">Procurement</th>
+                      <th className="text-right py-2 text-xs text-slate-500 font-medium whitespace-nowrap">Txns</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {data.byBranch.map((b) => (
+                      <tr key={b.branchId} className="border-b border-slate-800/50">
+                        <td className="py-2 text-slate-300 whitespace-nowrap">{b.branchName}</td>
+                        <td className="py-2 text-right text-emerald-400 whitespace-nowrap">{formatCurrency(b.salesRevenue)}</td>
+                        <td className="py-2 text-right text-blue-400 whitespace-nowrap">{formatCurrency(b.grossProfit)}</td>
+                        <td className={`py-2 text-right font-bold whitespace-nowrap ${b.netProfit >= 0 ? 'text-violet-400' : 'text-red-400'}`}>
+                          {formatCurrency(b.netProfit)}
+                        </td>
+                        <td className="py-2 text-right text-amber-400 whitespace-nowrap">{formatCurrency(b.procurementCost)}</td>
+                        <td className="py-2 text-right text-slate-400 whitespace-nowrap">{b.txCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
           {/* ── Product-wise Breakdown ── */}

@@ -82,7 +82,7 @@ function AdminCustomerView({ role, assignedBranches, forceBranchId, lightMode }:
     setLoading(true)
     const params = new URLSearchParams()
     if (debouncedSearch) params.set('search', debouncedSearch)
-    if (typeFilter && role !== 'MANAGER') params.set('type', typeFilter)
+    if (typeFilter) params.set('type', typeFilter)
     if (branchScope) params.set('branchId', branchScope)
 
     try {
@@ -179,12 +179,12 @@ function AdminCustomerView({ role, assignedBranches, forceBranchId, lightMode }:
     <div>
       {/* Type filter tabs — hidden for manager */}
       {tabs.length > 0 && (
-        <div className={`flex items-center gap-1 mb-4 ${t.tabBorder}`}>
+        <div className={`flex items-center gap-1 mb-4 overflow-x-auto no-scrollbar pb-1 ${t.tabBorder}`}>
           {tabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px] -mb-px ${
                 activeTab === tab ? t.tabActive : t.tabInactive
               }`}
             >
@@ -195,9 +195,9 @@ function AdminCustomerView({ role, assignedBranches, forceBranchId, lightMode }:
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[180px]">
-          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${t.searchIcon}`} />
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${t.searchIcon}`} />
           <input
             className={t.searchInput}
             placeholder="Search name or phone…"
@@ -206,17 +206,19 @@ function AdminCustomerView({ role, assignedBranches, forceBranchId, lightMode }:
           />
         </div>
 
-        <button onClick={loadCustomers} className={t.refreshBtn} title="Refresh">
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-2 justify-between sm:justify-end">
+          <button onClick={loadCustomers} className={t.refreshBtn} title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
 
-        <button
-          onClick={() => setModal('create')}
-          className="btn-primary flex items-center gap-1.5 ml-auto"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New Customer
-        </button>
+          <button
+            onClick={() => setModal('create')}
+            className="btn-primary flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Customer</span>
+          </button>
+        </div>
       </div>
 
       {loading ? (

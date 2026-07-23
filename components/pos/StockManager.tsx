@@ -366,28 +366,28 @@ export default function StockManager({ branchId }: { branchId: string }) {
                     )}
                   </div>
 
-                  <div className="flex items-end gap-2 flex-wrap">
-                    <div className="flex-1 min-w-[80px]">
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                    <div className="flex-1">
                       <label className="text-xs font-bold text-gray-500 block mb-1">কত {unit} পেলেন</label>
                       <input
                         type="number"
                         min="0"
                         step="0.001"
-                        className="w-full border-2 border-amber-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-amber-500 placeholder:text-gray-300"
+                        className="w-full border-2 border-amber-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-amber-500 placeholder:text-gray-300 min-h-[44px]"
                         placeholder="০"
                         value={row.quantity}
                         onChange={(e) => setRow(poolKey, { quantity: e.target.value }, buyingPrice)}
                       />
                     </div>
 
-                    <div className="flex-1 min-w-[90px]">
+                    <div className="flex-1">
                       <label className={`text-xs font-bold block mb-1 ${buyingPrice === 0 ? 'text-amber-600' : 'text-gray-500'}`}>
                         {buyingPrice > 0 ? `ক্রয় মূল্য (৳${buyingPrice}/${unit})` : `ক্রয় মূল্য ৳/${unit}`}
                       </label>
                       <input
                         type="number"
                         min="0"
-                        className="w-full border-2 border-gray-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-amber-400 placeholder:text-gray-300"
+                        className="w-full border-2 border-gray-300 rounded-xl px-3 py-2.5 text-base font-bold text-gray-800 bg-white focus:outline-none focus:border-amber-400 placeholder:text-gray-300 min-h-[44px]"
                         placeholder={buyingPrice > 0 ? `${buyingPrice}` : 'দাম'}
                         value={row.buyingPrice}
                         onChange={(e) => setRow(poolKey, { buyingPrice: e.target.value }, buyingPrice)}
@@ -397,10 +397,10 @@ export default function StockManager({ branchId }: { branchId: string }) {
                     <button
                       onClick={() => handlePoolSave(product)}
                       disabled={row.saving || !row.quantity}
-                      className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-base"
+                      className="flex items-center justify-center gap-1.5 px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-base min-h-[44px]"
                     >
-                      <Check className="w-4 h-4" />
-                      {row.saving ? 'সেভ...' : 'সেভ'}
+                      <Check className="w-5 h-5" />
+                      <span>{row.saving ? 'সেভ...' : 'সেভ'}</span>
                     </button>
                   </div>
 

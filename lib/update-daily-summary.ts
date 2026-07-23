@@ -14,7 +14,7 @@ export async function updateDailySummary(branchId: string, date: string) {
   const saleTypes = ['Cash Sale', 'Credit Sale', 'Partial Payment']
 
   const [agg] = await Transaction.aggregate([
-    { $match: { branchId: branchOid, createdAt: { $gte: start, $lt: end } } },
+    { $match: { branchId: branchOid, createdAt: { $gte: start, $lt: end }, status: { $ne: 'voided' } } },
     {
       $group: {
         _id: null,

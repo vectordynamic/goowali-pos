@@ -350,7 +350,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
 
         <div className="p-5 space-y-4">
           {systemTotals && (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="bg-green-50 border border-green-200 rounded-2xl p-3 text-center">
                 <p className="text-xs font-bold text-green-700 mb-1">নগদ বিক্রি</p>
                 <p className="text-lg font-black text-green-700">{formatCurrency(systemTotals.cashSales)}</p>
@@ -366,7 +366,7 @@ export default function ZReport({ branchId }: { branchId: string }) {
             </div>
           )}
 
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl px-5 py-3 flex items-center justify-between">
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl px-4 py-3 flex items-center justify-between flex-wrap gap-2">
             <span className="text-base font-bold text-blue-700">সিস্টেম হিসাবে থাকার কথা</span>
             <span className="text-2xl font-black text-blue-700">{formatCurrency(expected)}</span>
           </div>

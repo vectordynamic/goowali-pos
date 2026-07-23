@@ -81,9 +81,9 @@ export default function UserManager({ role: actorRole, assignedBranches: actorBr
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-500">{users.length} users</span>
+          <span className="text-sm text-slate-400 font-medium">{users.length} users</span>
           <button
             onClick={load}
             className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded transition-colors"
@@ -94,10 +94,10 @@ export default function UserManager({ role: actorRole, assignedBranches: actorBr
         </div>
         <button
           onClick={() => setModal('create')}
-          className="btn-primary flex items-center gap-1.5"
+          className="btn-primary flex items-center gap-1.5 self-start sm:self-auto"
         >
-          <Plus className="w-3.5 h-3.5" />
-          Add User
+          <Plus className="w-4 h-4" />
+          <span>Add User</span>
         </button>
       </div>
 
@@ -107,7 +107,8 @@ export default function UserManager({ role: actorRole, assignedBranches: actorBr
         ) : users.length === 0 ? (
           <div className="text-center text-slate-500 py-12 text-sm">No users yet</div>
         ) : (
-          <table className="table-base">
+          <div className="overflow-x-auto">
+            <table className="table-base min-w-[600px]">
             <thead>
               <tr>
                 <th>Name</th>
@@ -177,6 +178,7 @@ export default function UserManager({ role: actorRole, assignedBranches: actorBr
               ))}
             </tbody>
           </table>
+        </div>
         )}
       </div>
 

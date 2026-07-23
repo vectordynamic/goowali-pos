@@ -44,20 +44,9 @@ export async function GET(req: NextRequest) {
 
   const posLookup = sp.get('pos') === '1'
 
-  if (role === 'MANAGER') {
-    if (confirm) {
-      // Dispatch view: customers with at least one regular order (any type)
-      filter['paikariConfig.fixedProductRates.0'] = { $exists: true }
-    } else if (dueOnly) {
-      // Due page: all branch customers with outstanding dues — no createdBy restriction
-      if (type) filter.customerType = type
-    } else if (posLookup) {
-      // POS search: find any customer in branch by name/phone (for attaching to transactions)
-      if (type) filter.customerType = type
-    } else {
-      // Customer list: only customers this manager created (privacy — hides other customers' contact info)
-      filter.createdBy = userId
-    }
+  if (confirm) {
+    // Dispatch view: customers with at least one regular order (any type)
+    filter['paikariConfig.fixedProductRates.0'] = { $exists: true }
   } else if (type) {
     filter.customerType = type
   }

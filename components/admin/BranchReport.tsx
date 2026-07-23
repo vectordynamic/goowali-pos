@@ -441,7 +441,8 @@ export default function BranchReport({ role, branches, assignedBranches, default
               {products.length === 0 ? (
                 <p className="p-5 text-slate-500">No products</p>
               ) : (
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[600px]">
                   <thead>
                     <tr className="border-b border-slate-700 bg-slate-800/60">
                       <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Product</th>
@@ -513,6 +514,7 @@ export default function BranchReport({ role, branches, assignedBranches, default
                     })}
                   </tbody>
                 </table>
+              </div>
               )}
             </div>
           </section>
@@ -606,38 +608,40 @@ export default function BranchReport({ role, branches, assignedBranches, default
               </div>
             ) : (
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-700 bg-slate-800/60">
-                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Customer</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Phone</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Due</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {topDebtors.map((c) => (
-                      <tr key={c._id} className="border-b border-slate-800 hover:bg-slate-800/30">
-                        <td className="px-4 py-3 text-slate-200 font-medium">{c.name}</td>
-                        <td className="px-4 py-3 text-slate-400">{c.phone ?? '—'}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={`font-black ${(c.khata?.currentDue ?? 0) > 1000 ? 'text-red-400' : 'text-amber-400'}`}>
-                            {formatCurrency(c.khata?.currentDue ?? 0)}
-                          </span>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[320px]">
+                    <thead>
+                      <tr className="border-b border-slate-700 bg-slate-800/60">
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Customer</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Phone</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-400 font-medium">Due</th>
                       </tr>
-                    ))}
-                    {customers.length > 5 && (
-                      <tr className="border-t border-slate-700">
-                        <td colSpan={2} className="px-4 py-2 text-slate-500 text-xs">
-                          +{customers.length - 5} more customers with outstanding dues
-                        </td>
-                        <td className="px-4 py-2 text-right text-slate-400 font-bold text-sm">
-                          Total {formatCurrency(totalDue)}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {topDebtors.map((c) => (
+                        <tr key={c._id} className="border-b border-slate-800 hover:bg-slate-800/30">
+                          <td className="px-4 py-3 text-slate-200 font-medium">{c.name}</td>
+                          <td className="px-4 py-3 text-slate-400">{c.phone ?? '—'}</td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`font-black ${(c.khata?.currentDue ?? 0) > 1000 ? 'text-red-400' : 'text-amber-400'}`}>
+                              {formatCurrency(c.khata?.currentDue ?? 0)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {customers.length > 5 && (
+                        <tr className="border-t border-slate-700">
+                          <td colSpan={2} className="px-4 py-2 text-slate-500 text-xs">
+                            +{customers.length - 5} more customers with outstanding dues
+                          </td>
+                          <td className="px-4 py-2 text-right text-slate-400 font-bold text-sm">
+                            Total {formatCurrency(totalDue)}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </section>

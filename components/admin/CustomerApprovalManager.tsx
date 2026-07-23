@@ -204,13 +204,13 @@ export default function CustomerApprovalManager({ role }: Props) {
                   </div>
                 </div>
 
-                <div className="flex gap-2 mt-4">
+                <div className="flex flex-col sm:flex-row gap-2 mt-4">
                   <button disabled={busy} onClick={() => act(c._id, 'approve')}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 rounded-md hover:bg-emerald-600/30 disabled:opacity-40 transition-colors">
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 text-sm font-semibold bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 rounded-xl hover:bg-emerald-600/30 disabled:opacity-40 transition-colors min-h-[44px] active:scale-[0.98]">
                     <Check className="w-4 h-4" /> Approve & Make Permanent
                   </button>
                   <button disabled={busy} onClick={() => act(c._id, 'reject')}
-                    className="flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium bg-rose-600/20 text-rose-400 border border-rose-600/30 rounded-md hover:bg-rose-600/30 disabled:opacity-40 transition-colors">
+                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold bg-rose-600/20 text-rose-400 border border-rose-600/30 rounded-xl hover:bg-rose-600/30 disabled:opacity-40 transition-colors min-h-[44px] active:scale-[0.98]">
                     <X className="w-4 h-4" /> Reject
                   </button>
                 </div>

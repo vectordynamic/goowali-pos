@@ -18,7 +18,8 @@ import {
   LayoutDashboard,
   KeyRound,
   Banknote,
-  BellRing
+  BellRing,
+  X
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -36,6 +37,7 @@ interface Props {
   role: Role
   assignedBranches: string[]
   branchList?: Branch[]
+  onNavItemClick?: () => void
 }
 
 const adminNavItems = [
@@ -52,7 +54,7 @@ const adminNavItems = [
   { href: '/branches', label: 'Branches', icon: GitBranch, roles: ['SUPER_ADMIN'] }
 ]
 
-export default function AdminSidebar({ role, assignedBranches, branchList = [] }: Props) {
+export default function AdminSidebar({ role, assignedBranches, branchList = [], onNavItemClick }: Props) {
   const pathname = usePathname()
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [pendingApprovals, setPendingApprovals] = useState(0)
@@ -79,30 +81,38 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
   const branchName = (id: string) => branchList.find((b) => b._id === id)?.name ?? `Branch …${id.slice(-4)}`
 
   return (
-    <aside className="w-56 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col">
+    <aside className="w-64 md:w-56 h-full flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col">
       {/* Brand */}
-      <div className="px-4 py-5 border-b border-slate-800">
+      <div className="px-4 py-4 md:py-5 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
             <ShoppingCart className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-slate-100 text-sm">ShopMS</span>
         </div>
+        {onNavItemClick && (
+          <button
+            onClick={onNavItemClick}
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* Role badge */}
       <div className="px-4 py-3 border-b border-slate-800">
         <span className={cn(
-          'text-xs font-medium px-2 py-1 rounded-full',
-          role === 'SUPER_ADMIN' && 'bg-violet-900/50 text-violet-400',
-          role === 'BRANCH_ADMIN' && 'bg-blue-900/50 text-blue-400'
+          'text-xs font-medium px-2.5 py-1 rounded-full inline-block',
+          role === 'SUPER_ADMIN' && 'bg-violet-900/50 text-violet-400 border border-violet-800/50',
+          role === 'BRANCH_ADMIN' && 'bg-blue-900/50 text-blue-400 border border-blue-800/50'
         )}>
           {role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}
         </span>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 px-2.5 py-3 space-y-1 overflow-y-auto no-scrollbar">
         {/* Main admin nav */}
         {visibleItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/')
@@ -113,17 +123,18 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavItemClick}
               className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors min-h-[44px] md:min-h-[38px]',
                 active
-                  ? 'bg-blue-600/20 text-blue-400 font-medium'
+                  ? 'bg-blue-600/20 text-blue-400 font-semibold'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
               )}
             >
               <item.icon className="w-4 h-4 flex-shrink-0" />
-              {label}
+              <span>{label}</span>
               {item.href === '/customer-approvals' && pendingApprovals > 0 && (
-                <span className="ml-auto min-w-[18px] h-[18px] px-1 flex items-center justify-center text-xs font-bold rounded-full bg-rose-500 text-white">
+                <span className="ml-auto min-w-[20px] h-[20px] px-1 flex items-center justify-center text-xs font-bold rounded-full bg-rose-500 text-white">
                   {pendingApprovals}
                 </span>
               )}
@@ -134,7 +145,7 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
         {/* POS terminal shortcuts */}
         {assignedBranches.length > 0 && (
           <div className="pt-4">
-            <p className="text-xs text-slate-600 px-3 mb-1.5 uppercase tracking-wider font-medium">
+            <p className="text-xs text-slate-500 px-3 mb-1.5 uppercase tracking-wider font-semibold">
               {role === 'SUPER_ADMIN' ? 'POS Terminals' : 'My Branch'}
             </p>
             {assignedBranches.slice(0, 5).map((bid) => {
@@ -144,14 +155,15 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
                 <Link
                   key={bid}
                   href={`/${bid}/pos`}
+                  onClick={onNavItemClick}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors min-h-[44px] md:min-h-[38px]',
                     posActive
-                      ? 'bg-blue-600/20 text-blue-400 font-medium'
+                      ? 'bg-blue-600/20 text-blue-400 font-semibold'
                       : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
                   )}
                 >
-                  <ShoppingCart className="w-3.5 h-3.5 flex-shrink-0" />
+                  <ShoppingCart className="w-4 h-4 flex-shrink-0" />
                   <span className="truncate">{name}</span>
                 </Link>
               )
@@ -161,20 +173,20 @@ export default function AdminSidebar({ role, assignedBranches, branchList = [] }
       </nav>
 
       {/* Account */}
-      <div className="px-2 py-3 border-t border-slate-800 space-y-0.5">
+      <div className="px-2.5 py-3 border-t border-slate-800 space-y-1">
         <button
           onClick={() => setShowPasswordModal(true)}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors min-h-[44px] md:min-h-[38px]"
         >
           <KeyRound className="w-4 h-4" />
-          Change Password
+          <span>Change Password</span>
         </button>
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-rose-400 hover:bg-rose-900/20 transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-slate-400 hover:text-rose-400 hover:bg-rose-900/20 transition-colors min-h-[44px] md:min-h-[38px]"
         >
           <LogOut className="w-4 h-4" />
-          Sign Out
+          <span>Sign Out</span>
         </button>
       </div>
 

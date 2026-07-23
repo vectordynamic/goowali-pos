@@ -180,7 +180,7 @@ export default function DuePage({ role, assignedBranches, forceBranchId, lightMo
       </div>
 
       {/* Filters */}
-      <div className={`flex flex-wrap items-center gap-3 mb-4 ${t.filterPanel}`}>
+      <div className={`flex flex-col sm:flex-row sm:items-center gap-3 mb-4 ${t.filterPanel}`}>
         <div className="relative flex-1 min-w-[160px]">
           <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 ${t.searchIcon}`} />
           <input
@@ -191,38 +191,42 @@ export default function DuePage({ role, assignedBranches, forceBranchId, lightMo
           />
         </div>
 
-        {showBranchFilter && branches.length > 1 && (
-          <select
-            className={t.select}
-            value={branchFilter}
-            onChange={(e) => setBranchFilter(e.target.value)}
-          >
-            <option value="">সব শাখা</option>
-            {branches.map((b) => (
-              <option key={b._id} value={b._id}>{b.name}</option>
-            ))}
-          </select>
-        )}
+        <div className="flex flex-wrap items-center gap-2 justify-between sm:justify-end">
+          {showBranchFilter && branches.length > 1 && (
+            <select
+              className={t.select}
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+            >
+              <option value="">সব শাখা</option>
+              {branches.map((b) => (
+                <option key={b._id} value={b._id}>{b.name}</option>
+              ))}
+            </select>
+          )}
 
-        <button onClick={load} className={t.refreshBtn}>
-          <RefreshCw className="w-5 h-5" />
-        </button>
+          <button onClick={load} className={t.refreshBtn}>
+            <RefreshCw className="w-5 h-5" />
+          </button>
 
-        <DuePdfDownload
-          branchId={forceBranchId || branchFilter || assignedBranches[0] || ''}
-          type={activeTab}
-          branchLabel={
-            forceBranchId || branchFilter
-              ? branchName(forceBranchId || branchFilter)
-              : 'সব শাখা'
-          }
-          lightMode={lightMode}
-        />
+          <DuePdfDownload
+            branchId={forceBranchId || branchFilter || assignedBranches[0] || ''}
+            type={activeTab}
+            branchLabel={
+              forceBranchId || branchFilter
+                ? branchName(forceBranchId || branchFilter)
+                : 'সব শাখা'
+            }
+            lightMode={lightMode}
+          />
+        </div>
 
         {customers.length > 0 && (
-          <div className="ml-auto flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-red-500" />
-            <span className="text-lg font-black text-red-500">{formatCurrency(totalDue)}</span>
+          <div className="sm:ml-auto flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-200 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-red-500" />
+              <span className="text-lg font-black text-red-500">{formatCurrency(totalDue)}</span>
+            </div>
             <span className={t.totalLabel}>মোট বাকি</span>
           </div>
         )}

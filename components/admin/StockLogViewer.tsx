@@ -78,12 +78,12 @@ export default function StockLogViewer({ role, assignedBranches, branches }: Pro
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         {role === 'SUPER_ADMIN' && (
           <select
             value={branchId}
             onChange={(e) => setBranchId(e.target.value)}
-            className="input-base w-48"
+            className="input-base w-full sm:w-48"
           >
             <option value="">All Branches</option>
             {visibleBranches.map((b) => (
@@ -95,27 +95,29 @@ export default function StockLogViewer({ role, assignedBranches, branches }: Pro
           <select
             value={branchId}
             onChange={(e) => setBranchId(e.target.value)}
-            className="input-base w-48"
+            className="input-base w-full sm:w-48"
           >
             {visibleBranches.map((b) => (
               <option key={b._id} value={b._id}>{b.name}</option>
             ))}
           </select>
         )}
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="input-base w-44"
-        />
-        {date && (
-          <button
-            onClick={() => setDate('')}
-            className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            Clear date
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="input-base w-full sm:w-44"
+          />
+          {date && (
+            <button
+              onClick={() => setDate('')}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors whitespace-nowrap px-2 py-1"
+            >
+              Clear date
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Table */}

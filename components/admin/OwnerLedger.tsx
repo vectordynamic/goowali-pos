@@ -124,11 +124,11 @@ export default function OwnerLedger({ role, branches, assignedBranches }: Props)
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <h1 className="text-2xl font-black text-slate-100">Owner Ledger</h1>
           <p className="text-sm text-slate-400">
-            Cash withdrawn and stock funded by branch admins — money that never touched the store's own cash for a purchase, or cash taken out of the till
+            Cash withdrawn and stock funded by branch admins
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -136,7 +136,7 @@ export default function OwnerLedger({ role, branches, assignedBranches }: Props)
             <select
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-base w-auto min-h-[40px]"
             >
               <option value="">All branches</option>
               {branches.map((b) => (
@@ -147,7 +147,7 @@ export default function OwnerLedger({ role, branches, assignedBranches }: Props)
           <button
             onClick={load}
             disabled={loading}
-            className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors disabled:opacity-40"
+            className="p-2.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors disabled:opacity-40 min-h-[40px] min-w-[40px] flex items-center justify-center"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -162,32 +162,32 @@ export default function OwnerLedger({ role, branches, assignedBranches }: Props)
             <ArrowDownCircle className="w-4 h-4" />
             Withdraw Cash From Drawer
           </p>
-          <div className="flex items-end gap-3 flex-wrap">
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Amount (৳)</label>
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="w-full sm:w-36">
+              <label className="text-xs text-slate-400 block mb-1 font-medium">Amount (৳)</label>
               <input
                 type="number"
                 min="1"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0"
-                className="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-lg px-3 py-2 w-32 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                className="input-base"
               />
             </div>
-            <div className="flex-1 min-w-[200px]">
-              <label className="text-xs text-slate-400 block mb-1">Reason (optional)</label>
+            <div className="flex-1">
+              <label className="text-xs text-slate-400 block mb-1 font-medium">Reason (optional)</label>
               <input
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="e.g. personal expense"
-                className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                className="input-base"
               />
             </div>
             <button
               onClick={handleWithdraw}
               disabled={submitting}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-lg transition-colors disabled:opacity-40"
+              className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-40 min-h-[44px] flex items-center justify-center"
             >
               {submitting ? 'Withdrawing…' : 'Withdraw'}
             </button>

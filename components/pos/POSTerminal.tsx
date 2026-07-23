@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, Minus, Trash2, Search, X, CheckCircle2, Lock, Play, Calendar } from 'lucide-react'
-import { formatCurrency, today } from '@/lib/utils'
+import { Plus, Minus, Trash2, Search, X, CheckCircle2, Lock, Play, Calendar, ShoppingCart } from 'lucide-react'
+import { formatCurrency, today, cn } from '@/lib/utils'
 import { useProducts } from '@/lib/queries/useProducts'
 import { useDailyClosing, useActiveClosingDate } from '@/lib/queries/useDailyClosing'
 
@@ -93,6 +93,9 @@ export default function POSTerminal({ branchId }: Props) {
   
   // Drill-down UI state
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+
+  // Mobile View Tab Switcher ('products' | 'cart')
+  const [mobileTab, setMobileTab] = useState<'products' | 'cart'>('products')
 
   // Payment
   const [mode, setMode] = useState<PaymentMode>('Cash Sale')
@@ -463,14 +466,52 @@ export default function POSTerminal({ branchId }: Props) {
   }
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-gray-50">
+    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-gray-50 relative">
+
+      {/* ── Mobile Top Tab Switcher Bar (< md) ── */}
+      <div className="md:hidden flex border-b border-gray-200 bg-white px-2 py-1.5 flex-shrink-0">
+        <button
+          onClick={() => setMobileTab('products')}
+          className={cn(
+            'flex-1 py-2 px-3 text-center text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 min-h-[40px]',
+            mobileTab === 'products'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-gray-600 hover:bg-gray-100'
+          )}
+        >
+          <span>📦 পণ্য সমূহ</span>
+        </button>
+        <button
+          onClick={() => setMobileTab('cart')}
+          className={cn(
+            'flex-1 py-2 px-3 text-center text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 min-h-[40px] relative',
+            mobileTab === 'cart'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-gray-600 hover:bg-gray-100'
+          )}
+        >
+          <ShoppingCart className="w-4 h-4" />
+          <span>কার্ট ও পেমেন্ট</span>
+          {cart.length > 0 && (
+            <span className={cn(
+              'px-1.5 py-0.5 text-xs font-black rounded-full ml-1',
+              mobileTab === 'cart' ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
+            )}>
+              {cart.length}
+            </span>
+          )}
+        </button>
+      </div>
 
       {/* ── Left: Product grid ── */}
-      <div className="flex-1 flex flex-col overflow-hidden p-4">
-        <div className="relative mb-4">
+      <div className={cn(
+        'flex-1 flex-col overflow-hidden p-3 sm:p-4',
+        mobileTab === 'cart' ? 'hidden md:flex' : 'flex'
+      )}>
+        <div className="relative mb-3 sm:mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
-            className="w-full pl-12 pr-4 py-3 text-lg border-2 border-gray-300 rounded-xl bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-400 shadow-sm"
+            className="w-full pl-12 pr-4 py-2.5 sm:py-3 text-base sm:text-lg border-2 border-gray-300 rounded-xl bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-400 shadow-sm"
             placeholder="পণ্য খুঁজুন..."
             value={search}
             onChange={(e) => {
@@ -486,7 +527,7 @@ export default function POSTerminal({ branchId }: Props) {
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden relative">
-            <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
+            <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3 content-start pb-20 md:pb-0">
               {filtered.map((product) => {
                 let totalStock = 0
                 if (product.isPooled) {
@@ -511,14 +552,14 @@ export default function POSTerminal({ branchId }: Props) {
                         setSelectedProduct(product)
                       }
                     }}
-                    className={`rounded-2xl p-4 text-left transition-all border-2 shadow-sm flex flex-col ${
+                    className={`rounded-2xl p-3 sm:p-4 text-left transition-all border-2 shadow-sm flex flex-col min-h-[110px] ${
                       inStock
                         ? 'bg-white border-gray-200 hover:border-blue-400 hover:bg-blue-50 active:scale-95'
                         : 'bg-gray-100 border-gray-200 opacity-60'
                     }`}
                   >
-                    <div className="flex items-start justify-between mb-1 gap-2 w-full">
-                      <p className="text-base font-bold text-gray-800 leading-snug">
+                    <div className="flex items-start justify-between mb-1 gap-1.5 w-full">
+                      <p className="text-sm sm:text-base font-bold text-gray-800 leading-snug line-clamp-2">
                         {product.name}
                       </p>
                       {product.isPooled && (
@@ -529,17 +570,17 @@ export default function POSTerminal({ branchId }: Props) {
                     </div>
                     {onlyVariant ? (
                       onlyVariantPrice > 0 && (
-                        <p className="text-lg font-black text-blue-600 mb-2 mt-auto">৳{onlyVariantPrice}</p>
+                        <p className="text-base sm:text-lg font-black text-blue-600 mb-1 mt-auto">৳{onlyVariantPrice}</p>
                       )
                     ) : (
-                      <p className="text-sm text-gray-500 mb-2 mt-auto">{variantCount} ভেরিয়েন্ট</p>
+                      <p className="text-xs sm:text-sm text-gray-500 mb-1 mt-auto">{variantCount} ভেরিয়েন্ট</p>
                     )}
                     {inStock ? (
-                      <span className="inline-block bg-green-100 text-green-700 text-sm font-semibold px-2 py-0.5 rounded-lg mt-1">
-                        {product.isPooled ? `ট্যাংক: ${totalStock}` : `মোট আছে: ${totalStock}`}
+                      <span className="inline-block bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-lg mt-0.5 self-start">
+                        {product.isPooled ? `ট্যাংক: ${totalStock}` : `আছে: ${totalStock}`}
                       </span>
                     ) : (
-                      <span className="inline-block bg-red-100 text-red-600 text-sm font-semibold px-2 py-0.5 rounded-lg mt-1">
+                      <span className="inline-block bg-red-100 text-red-600 text-xs font-semibold px-2 py-0.5 rounded-lg mt-0.5 self-start">
                         স্টক নেই
                       </span>
                     )}
@@ -548,16 +589,33 @@ export default function POSTerminal({ branchId }: Props) {
               })}
             </div>
 
+            {/* ── Floating Mobile Bottom Cart Bar (< md) ── */}
+            {cart.length > 0 && mobileTab === 'products' && (
+              <div className="md:hidden fixed bottom-3 left-3 right-3 z-40 bg-slate-900 text-white rounded-2xl p-3 shadow-2xl flex items-center justify-between border border-slate-700">
+                <div className="min-w-0 pr-2">
+                  <p className="text-xs text-slate-400 font-medium truncate">{cart.length} টি পণ্য কার্টে আছে</p>
+                  <p className="text-lg font-black text-emerald-400">{formatCurrency(cartTotal)}</p>
+                </div>
+                <button
+                  onClick={() => setMobileTab('cart')}
+                  className="px-4 py-2.5 bg-blue-600 text-white font-bold text-sm rounded-xl shadow hover:bg-blue-500 flex items-center gap-1.5 min-h-[44px] flex-shrink-0 active:scale-95"
+                >
+                  <span>কার্ট দেখুন</span>
+                  <ShoppingCart className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {selectedProduct && (
-              <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedProduct(null)}>
-                <div className="bg-gray-50 rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-full" onClick={e => e.stopPropagation()}>
-                  <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
-                    <h2 className="text-xl font-bold text-gray-800">{selectedProduct.name} - ভেরিয়েন্ট নির্বাচন করুন</h2>
-                    <button onClick={() => setSelectedProduct(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors">
+              <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4" onClick={() => setSelectedProduct(null)}>
+                <div className="bg-gray-50 rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-3.5 sm:p-4 border-b border-gray-200 bg-white">
+                    <h2 className="text-base sm:text-xl font-bold text-gray-800 truncate pr-2">{selectedProduct.name} - ভেরিয়েন্ট নির্বাচন</h2>
+                    <button onClick={() => setSelectedProduct(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors flex-shrink-0">
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                  <div className="p-4 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 content-start">
+                  <div className="p-3 sm:p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 content-start">
                     {selectedProduct.variants.map((variant) => {
                       let inStock = false
                       let stockDisplay = 0
@@ -582,16 +640,19 @@ export default function POSTerminal({ branchId }: Props) {
                       return (
                         <button
                           key={`${selectedProduct._id}:${variant.variantId}`}
-                          onClick={() => addToCart(selectedProduct, variant)}
+                          onClick={() => {
+                            addToCart(selectedProduct, variant)
+                            toast.success(`${selectedProduct.name} যোগ হয়েছে ✓`)
+                          }}
                           disabled={!inStock}
-                          className={`rounded-2xl p-4 text-left transition-all border-2 shadow-sm ${
+                          className={`rounded-2xl p-3.5 sm:p-4 text-left transition-all border-2 shadow-sm min-h-[90px] ${
                             inStock
                               ? 'bg-white border-gray-200 hover:border-blue-400 hover:bg-blue-50 active:scale-95'
                               : 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
                           }`}
                         >
                           <div className="flex items-start justify-between mb-1 gap-2">
-                            <p className="text-base font-bold text-gray-800 leading-snug">
+                            <p className="text-sm sm:text-base font-bold text-gray-800 leading-snug">
                               {selectedProduct.name}
                             </p>
                             {selectedProduct.isPooled && (
@@ -601,19 +662,19 @@ export default function POSTerminal({ branchId }: Props) {
                             )}
                           </div>
                           {variant.sizeLabel && (
-                            <p className="text-sm text-gray-500 mb-1">{variant.sizeLabel}</p>
+                            <p className="text-xs sm:text-sm text-gray-500 mb-1">{variant.sizeLabel}</p>
                           )}
                           {mrpPrice > 0 && (
-                            <p className="text-sm font-semibold text-blue-600 mb-1">
+                            <p className="text-xs sm:text-sm font-semibold text-blue-600 mb-1">
                               ৳{mrpPrice}/{selectedProduct.unitType === 'Liquid' ? 'L' : selectedProduct.unitType === 'Weight' ? 'kg' : 'পিস'}
                             </p>
                           )}
                           {inStock ? (
-                            <span className="inline-block bg-green-100 text-green-700 text-sm font-semibold px-2 py-0.5 rounded-lg">
+                            <span className="inline-block bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-lg">
                               {selectedProduct.isPooled ? `ট্যাংক: ${stockDisplay}` : `আছে: ${stockDisplay}`}
                             </span>
                           ) : (
-                            <span className="inline-block bg-red-100 text-red-600 text-sm font-semibold px-2 py-0.5 rounded-lg">
+                            <span className="inline-block bg-red-100 text-red-600 text-xs font-semibold px-2 py-0.5 rounded-lg">
                               স্টক নেই
                             </span>
                           )}
@@ -629,7 +690,10 @@ export default function POSTerminal({ branchId }: Props) {
       </div>
 
       {/* ── Right: Order + Payment ── */}
-      <div className="w-[22rem] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col shadow-2xl z-10">
+      <div className={cn(
+        'w-full md:w-[22rem] flex-shrink-0 bg-white border-l border-gray-200 flex-col shadow-2xl z-10 overflow-y-auto',
+        mobileTab === 'products' ? 'hidden md:flex' : 'flex'
+      )}>
 
         {/* Customer section */}
         <div className="px-3 pt-3 pb-2 border-b border-gray-100 bg-gray-50/50">

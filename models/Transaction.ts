@@ -25,6 +25,13 @@ export interface TransactionDocument extends Document {
     netProfitAmount: number
   }
   notes?: string
+  // Void / correction audit trail
+  status: 'active' | 'voided'
+  voidedAt?: Date
+  voidedBy?: Types.ObjectId
+  voidReason?: string
+  correctedFromId?: Types.ObjectId  // this tx replaces another (points to the original)
+  correctedById?: Types.ObjectId    // this tx was replaced by another (points to the correction)
   createdAt: Date
   updatedAt: Date
 }
@@ -82,7 +89,14 @@ const TransactionSchema = new Schema<TransactionDocument>(
       amountAddedToKhata: { type: Number, default: 0 },
       netProfitAmount: { type: Number, required: true }
     },
-    notes: { type: String }
+    notes: { type: String },
+    // Void / correction audit trail
+    status: { type: String, enum: ['active', 'voided'], default: 'active', index: true },
+    voidedAt: { type: Date },
+    voidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    voidReason: { type: String, trim: true },
+    correctedFromId: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    correctedById: { type: Schema.Types.ObjectId, ref: 'Transaction' }
   },
   { timestamps: true }
 )

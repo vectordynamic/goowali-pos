@@ -274,24 +274,26 @@ export default function NextDayOrders({ branchId }: Props) {
         <p className="text-sm text-gray-500 mt-1">
           প্রতি কাস্টমারকে কল করে কনফার্ম করুন — <b className="text-gray-700">কালকে নেবে কি না</b>, <b className="text-gray-700">কত নেবে</b>, <b className="text-gray-700">কখন নেবে</b>।
         </p>
-        <div className="flex items-center gap-3 mt-2 text-sm font-bold flex-wrap">
-          <span className="text-gray-600">{logs.length} জন কাস্টমার</span>
-          {doneCount > 0 && <span className="text-green-600">✅ {doneCount} কল হয়েছে</span>}
-          {pendingCount > 0 && <span className="text-amber-600">⏳ {pendingCount} বাকি</span>}
-          {temps.length > 0 && <span className="text-purple-600">🆕 {temps.length} নতুন</span>}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-3 text-sm font-bold">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-gray-600">{logs.length} জন কাস্টমার</span>
+            {doneCount > 0 && <span className="text-green-600">✅ {doneCount} কল হয়েছে</span>}
+            {pendingCount > 0 && <span className="text-amber-600">⏳ {pendingCount} বাকি</span>}
+            {temps.length > 0 && <span className="text-purple-600">🆕 {temps.length} নতুন</span>}
+          </div>
           <button
             onClick={() => setShowAdd(true)}
-            className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+            className="w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors min-h-[44px]"
           >
             <UserPlus className="w-4 h-4" />
-            নতুন কাস্টমার
+            <span>নতুন কাস্টমার</span>
           </button>
         </div>
       </div>
 
       {/* Tomorrow-at-a-glance summary */}
       {!isLoading && logs.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <div className="lcard px-4 py-3 border-l-4 border-green-400">
             <p className="text-xs font-bold text-gray-400">✅ অর্ডার কনফার্ম</p>
             <p className="text-2xl font-black text-green-600">{confirmedLogs.length} জন</p>

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import AdminSidebar from '@/components/layout/AdminSidebar'
+import AdminLayoutWrapper from '@/components/layout/AdminLayoutWrapper'
 import dbConnect from '@/lib/db'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -24,15 +24,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
-      <AdminSidebar
-        role={role}
-        assignedBranches={assignedBranches}
-        branchList={branchList}
-      />
-      <main className="flex-1 overflow-y-auto">
-        {children}
-      </main>
-    </div>
+    <AdminLayoutWrapper
+      role={role}
+      assignedBranches={assignedBranches}
+      branchList={branchList}
+    >
+      {children}
+    </AdminLayoutWrapper>
   )
 }

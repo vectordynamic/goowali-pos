@@ -103,10 +103,10 @@ export default function RegularOrderManager({ role, assignedBranches }: Props) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
         {showBranchFilter && branches.length > 1 && (
           <select
-            className="input-base w-48"
+            className="input-base w-full sm:w-48"
             value={branchFilter}
             onChange={(e) => setBranchFilter(e.target.value)}
           >
@@ -117,17 +117,19 @@ export default function RegularOrderManager({ role, assignedBranches }: Props) {
           </select>
         )}
 
-        <button
-          onClick={load}
-          className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-3 justify-between sm:justify-start">
+          <button
+            onClick={load}
+            className="p-2 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
+            title="Refresh"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
 
-        <span className="text-sm text-slate-500 ml-1">
-          {withOrders.length} with orders · {withoutOrders.length} without
-        </span>
+          <span className="text-sm text-slate-400 font-medium">
+            {withOrders.length} with orders · {withoutOrders.length} without
+          </span>
+        </div>
       </div>
 
       {loading ? (
@@ -146,7 +148,7 @@ export default function RegularOrderManager({ role, assignedBranches }: Props) {
             const hasOrder = c.paikariConfig?.fixedProductRates?.length > 0
             return (
               <div key={c._id} className="card p-4">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-semibold text-slate-100">{c.name}</p>
@@ -170,10 +172,10 @@ export default function RegularOrderManager({ role, assignedBranches }: Props) {
                   </div>
                   <button
                     onClick={() => setEditTarget(c)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded-md hover:bg-blue-600/30 transition-colors flex-shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded-xl hover:bg-blue-600/30 transition-colors flex-shrink-0 min-h-[44px]"
                   >
-                    <Pencil className="w-3.5 h-3.5" />
-                    {hasOrder ? 'Edit Order' : 'Set Order'}
+                    <Pencil className="w-4 h-4" />
+                    <span>{hasOrder ? 'Edit Order' : 'Set Order'}</span>
                   </button>
                 </div>
 
