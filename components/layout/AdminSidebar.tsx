@@ -19,7 +19,8 @@ import {
   KeyRound,
   Banknote,
   BellRing,
-  X
+  X,
+  Receipt
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -48,6 +49,7 @@ const adminNavItems = [
   { href: '/regular-orders', label: 'Regular Orders', icon: ClipboardList, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/customer-approvals', label: 'Approvals', icon: BellRing, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/due', label: 'Due Collection', icon: Wallet, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
+  { href: '/expenses', label: 'Expenses', icon: Receipt, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/stock-log', label: 'Stock Log', icon: History, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/owner-ledger', label: 'Owner Ledger', icon: Banknote, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/users', label: 'Users', icon: Users, roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },

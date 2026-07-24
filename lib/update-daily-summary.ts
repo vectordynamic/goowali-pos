@@ -43,6 +43,9 @@ export async function updateDailySummary(branchId: string, date: string) {
         expenses: {
           $sum: { $cond: [{ $eq: ['$transactionType', 'Expense'] }, '$financials.totalBill', 0] }
         },
+        ownerFundedExpenses: {
+          $sum: { $cond: [{ $and: [{ $eq: ['$transactionType', 'Expense'] }, { $eq: ['$expenseFundingSource', 'Owner Funded'] }] }, '$financials.totalBill', 0] }
+        },
         cashIn: {
           $sum: { $cond: [{ $in: ['$transactionType', ['Cash Sale', 'Partial Payment', 'Due Collection']] }, '$financials.cashPaid', 0] }
         },
@@ -79,7 +82,7 @@ export async function updateDailySummary(branchId: string, date: string) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _id: _ignored, ...rest } = agg ?? {
     txCount: 0, salesRevenue: 0, grossProfit: 0, salesCount: 0,
-    procurementCost: 0, procurementCount: 0, ownerPurchaseCost: 0, ownerWithdrawals: 0, expenses: 0,
+    procurementCost: 0, procurementCount: 0, ownerPurchaseCost: 0, ownerWithdrawals: 0, expenses: 0, ownerFundedExpenses: 0,
     cashIn: 0, cashOut: 0, khataAdded: 0, khataCollected: 0,
   }
 

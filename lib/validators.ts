@@ -258,6 +258,19 @@ export const WithdrawalCreateSchema = z.object({
   notes: z.string().trim().max(300).optional()
 })
 
+// ─── Expense ──────────────────────────────────────────────────────────────────
+export const ExpenseCreateSchema = z.object({
+  branchId: objectId,
+  amount: z.number().positive('Amount must be > 0'),
+  category: z.enum([
+    'Rent', 'Utilities', 'Fuel', 'Food', 'Supplies',
+    'Salary', 'Transport', 'Maintenance', 'Other'
+  ]),
+  fundingSource: z.enum(['Shop Cash', 'Owner Funded']),
+  description: z.string().trim().min(1, 'Description required').max(500),
+  notes: z.string().trim().max(500).optional()
+})
+
 // ─── Helper: parse and return 400 on failure ─────────────────────────────────
 import { NextResponse } from 'next/server'
 

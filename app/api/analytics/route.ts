@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
 
   // None of the 6 reads below depend on each other's results — run them concurrently
   // instead of one after another (previously ~7 sequential round trips for this endpoint).
-  const [summaryResult, trend, byBranchRaw, byProduct, khataResult, visibleBranchesRaw] = await Promise.all([
+  const [summaryResult, trend, byBranchRaw, byProduct, khataResult, visibleBranchesRaw, expensesByCategoryRaw] = await Promise.all([
     // ── Fast aggregate from pre-computed DailySummary ──
     DailySummary.aggregate([
       { $match: matchStage },
@@ -78,6 +78,7 @@ export async function GET(req: NextRequest) {
           grossProfit: { $sum: '$grossProfit' },
           procurementCost: { $sum: '$procurementCost' },
           expenses: { $sum: '$expenses' },
+          ownerFundedExpenses: { $sum: '$ownerFundedExpenses' },
           netProfit: { $sum: '$netProfit' },
           cashIn: { $sum: '$cashIn' },
           cashOut: { $sum: '$cashOut' },
@@ -104,6 +105,7 @@ export async function GET(req: NextRequest) {
           grossProfit: 1,
           netProfit: 1,
           expenses: 1,
+          ownerFundedExpenses: 1,
           procurementCost: 1,
           cashIn: 1,
         }
@@ -183,11 +185,35 @@ export async function GET(req: NextRequest) {
     Branch.find(
       role === 'SUPER_ADMIN' ? {} : { _id: { $in: assignedBranches } }
     ).select('_id name').lean(),
+    // ── Expense Category breakdown ──
+    Transaction.aggregate([
+      { $match: {
+          branchId: { $in: allowedBranches },
+          transactionType: 'Expense',
+          ...(from || to ? {
+            createdAt: {
+              ...(from ? { $gte: new Date(from) } : {}),
+              ...(to ? { $lt: (() => { const d = new Date(to); d.setDate(d.getDate() + 1); return d })() } : {})
+            }
+          } : {})
+      } },
+      {
+        $group: {
+          _id: '$expenseCategory',
+          total: { $sum: '$financials.totalBill' }
+        }
+      }
+    ])
   ])
 
   const summary = summaryResult[0]
   const khataTotal = khataResult[0]
   const visibleBranches = visibleBranchesRaw as any[]
+  
+  const expensesByCategory = expensesByCategoryRaw.map((e: any) => ({
+    category: e._id || 'Other',
+    total: e.total
+  }))
 
   // Branch-name lookup genuinely depends on byBranchRaw's result — must run after.
   const branchIds = byBranchRaw.map((b) => b._id)
@@ -206,7 +232,7 @@ export async function GET(req: NextRequest) {
 
   const emptySummary = {
     salesRevenue: 0, cogs: 0, grossProfit: 0,
-    procurementCost: 0, expenses: 0, netProfit: 0,
+    procurementCost: 0, expenses: 0, ownerFundedExpenses: 0, netProfit: 0,
     cashIn: 0, cashOut: 0, khataAdded: 0, khataCollected: 0,
     salesCount: 0, procurementCount: 0, txCount: 0,
   }
@@ -216,6 +242,7 @@ export async function GET(req: NextRequest) {
     trend,
     byBranch,
     byProduct,
+    expensesByCategory,
     totalOutstandingKhata: khataTotal?.totalDue ?? 0,
     visibleBranches: visibleBranches.map((b: any) => ({ _id: b._id.toString(), name: b.name })),
   })

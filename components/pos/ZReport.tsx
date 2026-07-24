@@ -13,6 +13,7 @@ interface SystemTotals {
   cashSales: number
   dueCollections: number
   expensesLogged: number
+  ownerFundedExpensesLogged?: number
   expectedDrawerCash: number
 }
 
@@ -360,9 +361,15 @@ export default function ZReport({ branchId }: { branchId: string }) {
                 <p className="text-lg font-black text-blue-700">{formatCurrency(systemTotals.dueCollections)}</p>
               </div>
               <div className="bg-red-50 border border-red-200 rounded-2xl p-3 text-center">
-                <p className="text-xs font-bold text-red-700 mb-1">খরচ</p>
-                <p className="text-lg font-black text-red-700">{formatCurrency(systemTotals.expensesLogged)}</p>
+                <p className="text-xs font-bold text-red-700 mb-1">দোকানের ক্যাশ খরচ</p>
+                <p className="text-lg font-black text-red-700">{formatCurrency(systemTotals.expensesLogged - (systemTotals.ownerFundedExpensesLogged || 0))}</p>
               </div>
+              {systemTotals.ownerFundedExpensesLogged ? (
+                <div className="bg-violet-50 border border-violet-200 rounded-2xl p-3 text-center">
+                  <p className="text-xs font-bold text-violet-700 mb-1">মালিকের খরচ</p>
+                  <p className="text-lg font-black text-violet-700">{formatCurrency(systemTotals.ownerFundedExpensesLogged)}</p>
+                </div>
+              ) : null}
             </div>
           )}
 

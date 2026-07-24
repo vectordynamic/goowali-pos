@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Types } from 'mongoose'
-import type { TransactionType } from '@/types'
+import type { TransactionType, ExpenseCategory, ExpenseFundingSource } from '@/types'
 
 export interface TransactionItemDocument {
   productId: Types.ObjectId
@@ -17,6 +17,8 @@ export interface TransactionDocument extends Document {
   ownerId?: Types.ObjectId | null
   transactionType: TransactionType
   items: TransactionItemDocument[]
+  expenseCategory?: ExpenseCategory | null
+  expenseFundingSource?: ExpenseFundingSource | null
   financials: {
     totalBill: number
     discount: number
@@ -80,6 +82,16 @@ const TransactionSchema = new Schema<TransactionDocument>(
         'Owner Purchase', 'Owner Withdrawal'
       ],
       required: true
+    },
+    expenseCategory: {
+      type: String,
+      enum: ['Rent', 'Utilities', 'Fuel', 'Food', 'Supplies', 'Salary', 'Transport', 'Maintenance', 'Other'],
+      default: null
+    },
+    expenseFundingSource: {
+      type: String,
+      enum: ['Shop Cash', 'Owner Funded'],
+      default: null
     },
     items: { type: [TransactionItemSchema], default: [] },
     financials: {

@@ -17,7 +17,8 @@ export interface DailySummaryDocument extends Document {
   ownerWithdrawals: number  // cashPaid from Owner Withdrawal transactions (store cash taken by an admin)
 
   // Expenses
-  expenses: number          // totalBill from Expense transactions
+  expenses: number          // totalBill from Expense transactions (Shop Cash + Owner Funded)
+  ownerFundedExpenses: number // totalBill from Expense transactions where fundingSource = 'Owner Funded'
 
   // Net
   netProfit: number         // grossProfit - expenses
@@ -54,6 +55,7 @@ const DailySummarySchema = new Schema<DailySummaryDocument>(
     ownerWithdrawals: { type: Number, default: 0 },
 
     expenses: { type: Number, default: 0 },
+    ownerFundedExpenses: { type: Number, default: 0 },
     netProfit: { type: Number, default: 0 },
 
     cashIn: { type: Number, default: 0 },

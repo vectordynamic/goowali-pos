@@ -22,6 +22,19 @@ export type TransactionType =
 
 export type DayStatus = 'Pending' | 'Open' | 'Locked'
 
+export type ExpenseCategory =
+  | 'Rent'
+  | 'Utilities'
+  | 'Fuel'
+  | 'Food'
+  | 'Supplies'
+  | 'Salary'
+  | 'Transport'
+  | 'Maintenance'
+  | 'Other'
+
+export type ExpenseFundingSource = 'Shop Cash' | 'Owner Funded'
+
 // ─── Session ──────────────────────────────────────────────────────────────────
 
 export interface SessionUser {
@@ -172,6 +185,8 @@ export interface ITransaction {
   ownerId?: Types.ObjectId | null    // which branch admin funded/withdrew (Owner Purchase / Owner Withdrawal only)
   transactionType: TransactionType
   items: ITransactionItem[]
+  expenseCategory?: ExpenseCategory | null
+  expenseFundingSource?: ExpenseFundingSource | null
   financials: {
     totalBill: number
     cashPaid: number

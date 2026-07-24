@@ -21,6 +21,7 @@ interface Summary {
   grossProfit: number
   procurementCost: number
   expenses: number
+  ownerFundedExpenses: number
   netProfit: number
   cashIn: number
   cashOut: number
@@ -72,6 +73,7 @@ interface Analytics {
   trend: TrendPoint[]
   byBranch: BranchBreakdown[]
   byProduct: ProductBreakdown[]
+  expensesByCategory?: { category: string; total: number }[]
   totalOutstandingKhata: number
   visibleBranches: Branch[]
 }
@@ -244,7 +246,7 @@ export default function AnalyticsDashboard({ role }: Props) {
               <StatCard
                 label="Net Profit"
                 value={formatCurrency(s?.netProfit ?? 0)}
-                sub={margin !== null ? `${margin}% margin · Expenses ${formatCurrency(s?.expenses ?? 0)}` : '—'}
+                sub={margin !== null ? `${margin}% margin` : '—'}
                 icon={TrendingUp}
                 color={(s?.netProfit ?? 0) >= 0 ? 'text-violet-400' : 'text-red-400'}
                 bg={(s?.netProfit ?? 0) >= 0 ? 'bg-violet-900/20' : 'bg-red-900/20'}
@@ -252,7 +254,40 @@ export default function AnalyticsDashboard({ role }: Props) {
             </div>
           </div>
 
-          {/* ── Row 2: Stock & Due ── */}
+          {/* ── Row 2: Expenses ── */}
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Expenses</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <StatCard
+                label="Total Expenses"
+                value={formatCurrency(s?.expenses ?? 0)}
+                sub="Overall operational cost"
+                icon={DollarSign} color="text-rose-400" bg="bg-rose-900/20"
+              />
+              <StatCard
+                label="Shop Cash Expenses"
+                value={formatCurrency((s?.expenses ?? 0) - (s?.ownerFundedExpenses ?? 0))}
+                sub="Paid from drawer"
+                icon={Wallet} color="text-emerald-400" bg="bg-emerald-900/20"
+              />
+              <StatCard
+                label="Owner Funded"
+                value={formatCurrency(s?.ownerFundedExpenses ?? 0)}
+                sub="Paid by owner directly"
+                icon={Wallet} color="text-violet-400" bg="bg-violet-900/20"
+              />
+              {data?.expensesByCategory && data.expensesByCategory.length > 0 && (
+                <StatCard
+                  label="Top Category"
+                  value={data.expensesByCategory.sort((a, b) => b.total - a.total)[0].category}
+                  sub={formatCurrency(data.expensesByCategory.sort((a, b) => b.total - a.total)[0].total)}
+                  icon={TrendingUp} color="text-amber-400" bg="bg-amber-900/20"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* ── Row 3: Stock & Due ── */}
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Stock & Due</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

@@ -59,6 +59,20 @@ async function computeSystemTotals(branchId: string, date: string, openingCash =
             $cond: [{ $eq: ['$transactionType', 'Expense'] }, '$financials.totalBill', 0],
           },
         },
+        ownerFundedExpensesLogged: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$transactionType', 'Expense'] },
+                  { $eq: ['$expenseFundingSource', 'Owner Funded'] }
+                ]
+              },
+              '$financials.totalBill',
+              0
+            ]
+          }
+        },
         procurementCost: {
           $sum: {
             $cond: [{ $eq: ['$transactionType', 'Procurement'] }, '$financials.cashPaid', 0],
@@ -76,11 +90,14 @@ async function computeSystemTotals(branchId: string, date: string, openingCash =
   const cashSales = result?.cashSales ?? 0
   const dueCollections = result?.dueCollections ?? 0
   const expensesLogged = result?.expensesLogged ?? 0
+  const ownerFundedExpensesLogged = result?.ownerFundedExpensesLogged ?? 0
   const procurementCost = result?.procurementCost ?? 0
   const ownerWithdrawals = result?.ownerWithdrawals ?? 0
-  const expectedDrawerCash = openingCash + cashSales + dueCollections - expensesLogged - procurementCost - ownerWithdrawals
+  // Drawer cash goes down for shop-cash expenses. Owner funded expenses do not reduce the drawer cash.
+  const shopCashExpenses = expensesLogged - ownerFundedExpensesLogged;
+  const expectedDrawerCash = openingCash + cashSales + dueCollections - shopCashExpenses - procurementCost - ownerWithdrawals
 
-  return { openingCash, cashSales, dueCollections, expensesLogged, procurementCost, ownerWithdrawals, expectedDrawerCash }
+  return { openingCash, cashSales, dueCollections, expensesLogged, ownerFundedExpensesLogged, procurementCost, ownerWithdrawals, expectedDrawerCash }
 }
 
 // GET /api/daily-closing?branchId=xxx&date=YYYY-MM-DD

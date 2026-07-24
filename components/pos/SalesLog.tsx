@@ -39,6 +39,8 @@ interface Transaction {
   voidReason?: string
   correctedFromId?: { invoiceId: string; transactionType: string; financials: { totalBill: number }; createdAt: string } | null
   correctedById?: { invoiceId: string; transactionType: string; createdAt: string } | null
+  expenseCategory?: string
+  expenseFundingSource?: string
 }
 
 interface Props {
@@ -322,7 +324,7 @@ export default function SalesLog({ branchId, role }: Props) {
                     <span className="truncate font-medium">
                       {tx.customerId?.name ?? (
                         tx.transactionType === 'Procurement' ? 'স্টক কেনা' :
-                        tx.transactionType === 'Expense' ? 'খরচ' : 'সাধারণ কাস্টমার'
+                        tx.transactionType === 'Expense' ? (tx.expenseCategory || 'খরচ') : 'সাধারণ কাস্টমার'
                       )}
                     </span>
                   </span>
@@ -356,6 +358,23 @@ export default function SalesLog({ branchId, role }: Props) {
                       <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-sm">
                         <p className="font-bold text-blue-700">✏️ সংশোধন</p>
                         <p className="text-blue-600 text-xs">মূল: {tx.correctedFromId.invoiceId} ({TYPE_BN[tx.correctedFromId.transactionType] ?? tx.correctedFromId.transactionType}) — {formatCurrency(tx.correctedFromId.financials.totalBill)}</p>
+                      </div>
+                    )}
+
+                    {tx.transactionType === 'Expense' && (
+                      <div className="flex gap-2">
+                        <span className="text-xs font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-700">
+                          খাত: {tx.expenseCategory || 'অন্যান্য'}
+                        </span>
+                        {tx.expenseFundingSource === 'Owner Funded' ? (
+                          <span className="text-xs font-bold px-2 py-1 rounded-lg bg-violet-100 text-violet-700">
+                            👤 মালিক দিয়েছেন
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700">
+                            💵 ক্যাশ থেকে
+                          </span>
+                        )}
                       </div>
                     )}
 

@@ -10,6 +10,7 @@ export interface DailyClosingDocument extends Document {
     cashSales: number
     dueCollections: number
     expensesLogged: number
+    ownerFundedExpensesLogged: number
     procurementCost: number
     ownerWithdrawals: number
     expectedDrawerCash: number
@@ -60,6 +61,7 @@ const DailyClosingSchema = new Schema<DailyClosingDocument>(
       cashSales: { type: Number, default: 0 },
       dueCollections: { type: Number, default: 0 },
       expensesLogged: { type: Number, default: 0 },
+      ownerFundedExpensesLogged: { type: Number, default: 0 },
       procurementCost: { type: Number, default: 0 },
       ownerWithdrawals: { type: Number, default: 0 },
       expectedDrawerCash: { type: Number, default: 0 },
